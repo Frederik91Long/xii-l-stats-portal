@@ -1,5 +1,5 @@
 import {NextRequest,NextResponse} from 'next/server';
-import {LEAGUE_ID,sleeper,League,Roster,User,Matchup} from '@/lib/sleeper';
+import {LEAGUE_ID,sleeper,getPlayers,League,Roster,User,Matchup} from '@/lib/sleeper';
 export const runtime='nodejs';
 export async function GET(request:NextRequest){
  try{
@@ -10,6 +10,24 @@ export async function GET(request:NextRequest){
  const currentWeek=Number(league.settings?.leg)||Number(state?.week)||1;
  const week=Number.isInteger(requested)&&requested>=1&&requested<=18?requested:Math.max(1,Math.min(18,currentWeek));
  const matchups=await sleeper<Matchup[]>(`/league/${LEAGUE_ID}/matchups/${week}`);
- return NextResponse.json({league,rosters,users,matchups,week,currentWeek,leagueId:LEAGUE_ID,fetchedAt:new Date().toISOString()},{headers:{'Cache-Control':'public, s-maxage=60, stale-while-revalidate=120'}});
+ const players = await getPlayers();
+return NextResponse.json(
+  {
+    league,
+    rosters,
+    users,
+    matchups,
+    players,
+    week,
+    currentWeek,
+    leagueId: LEAGUE_ID,
+    fetchedAt: new Date().toISOString()
+  },
+  {
+    headers: {
+      'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120'
+    }
+  }
+);
  }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'Unknown import error'},{status:502});}
 }
