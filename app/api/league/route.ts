@@ -10,7 +10,17 @@ export async function GET(request:NextRequest){
  const currentWeek=Number(league.settings?.leg)||Number(state?.week)||1;
  const week=Number.isInteger(requested)&&requested>=1&&requested<=18?requested:Math.max(1,Math.min(18,currentWeek));
  const matchups=await sleeper<Matchup[]>(`/league/${LEAGUE_ID}/matchups/${week}`);
- const players = await getPlayers();
+ const allPlayers = await getPlayers();
+
+const playerIds = new Set(
+  rosters.flatMap(roster => roster.players ?? [])
+);
+
+const players = Object.fromEntries(
+  [...playerIds]
+    .filter(id => allPlayers[id])
+    .map(id => [id, allPlayers[id]])
+);
 return NextResponse.json(
   {
     league,
