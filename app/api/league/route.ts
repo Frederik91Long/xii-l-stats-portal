@@ -12,6 +12,17 @@ import {
 
 export const runtime = 'nodejs';
 
+type PlayerStats = {
+  total: number;
+  starts: number;
+  weekly: Record<number, number>;
+};
+
+type FranchisePlayerStats = Record<
+  string,
+  Record<string, PlayerStats>
+>;
+
 export async function GET(request: NextRequest) {
   try {
     const requested = Number(
@@ -45,17 +56,12 @@ export async function GET(request: NextRequest) {
         ? requested
         : Math.max(1, Math.min(18, currentWeek));
 
-    // Current selected week
-    const matchups = await sleeper<Matchup[]>(
-      `/league/${LEAGUE_ID}/matchups/${week}`
-    );
-
-    // Historical matchups through the current week
     const lastWeek = Math.max(
       1,
       Math.min(18, currentWeek)
     );
 
+    // Fetch all historical matchups
     const weeklyMatchups = await Promise.all(
       Array.from({ length: lastWeek }, (_, index) =>
         sleeper<Matchup[]>(
@@ -64,20 +70,28 @@ export async function GET(request: NextRequest) {
       )
     );
 
-    // Player scoring: only starters earn XII-L points
-    const playerStats: Record<
-      string,
-      {
-        total: number;
-        starts: number;
-        weekly: Record<number, number>;
-      }
-    > = {};
+    const matchups =
+      weeklyMatchups[week - 1] ??
+      await sleeper<Matchup[]>(
+        `/league/${LEAGUE_ID}/matchups/${week}`
+      );
+
+    // Individual player statistics across all franchises
+    const playerStats: Record<string, PlayerStats> = {};
+
+    // Historical player statistics per franchise roster ID
+    const franchisePlayerStats: FranchisePlayerStats = {};
 
     weeklyMatchups.forEach((rows, index) => {
       const gameWeek = index + 1;
 
       rows.forEach(row => {
+        const rosterId = String(row.roster_id);
+
+        if (!franchisePlayerStats[rosterId]) {
+          franchisePlayerStats[rosterId] = {};
+        }
+
         const starters = row.starters ?? [];
         const scores = row.players_points ?? {};
 
@@ -86,6 +100,9 @@ export async function GET(request: NextRequest) {
             return;
           }
 
+          const score = Number(scores[playerId] ?? 0);
+
+          // Personal season statistics
           if (!playerStats[playerId]) {
             playerStats[playerId] = {
               total: 0,
@@ -94,19 +111,36 @@ export async function GET(request: NextRequest) {
             };
           }
 
-          const score = Number(scores[playerId] ?? 0);
-
           playerStats[playerId].weekly[gameWeek] =
             (playerStats[playerId].weekly[gameWeek] ?? 0) +
             score;
 
           playerStats[playerId].total += score;
           playerStats[playerId].starts += 1;
+
+          // Statistics for the franchise where the player started
+          if (!franchisePlayerStats[rosterId][playerId]) {
+            franchisePlayerStats[rosterId][playerId] = {
+              total: 0,
+              starts: 0,
+              weekly: {}
+            };
+          }
+
+          const franchiseStats =
+            franchisePlayerStats[rosterId][playerId];
+
+          franchiseStats.weekly[gameWeek] =
+            (franchiseStats.weekly[gameWeek] ?? 0) +
+            score;
+
+          franchiseStats.total += score;
+          franchiseStats.starts += 1;
         });
       });
     });
 
-    // Load only relevant player details
+    // Include current and historical players
     const allPlayers = await getPlayers();
 
     const playerIds = new Set([
@@ -128,6 +162,7 @@ export async function GET(request: NextRequest) {
         matchups,
         players,
         playerStats,
+        franchisePlayerStats,
         week,
         currentWeek,
         leagueId: LEAGUE_ID,
