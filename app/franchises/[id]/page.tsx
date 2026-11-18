@@ -97,14 +97,16 @@ export default function Franchise() {
       ({ id, player, starter, stats }) => (
         <tr key={id}>
           <td>
-            {player?.full_name ||
-              [
-                player?.first_name,
-                player?.last_name
-              ]
-                .filter(Boolean)
-                .join(' ') ||
-              id}
+            <Link href={`/players/${id}`}>
+              {player?.full_name ||
+                [
+                  player?.first_name,
+                  player?.last_name
+                ]
+                  .filter(Boolean)
+                  .join(' ') ||
+                id}
+            </Link>
           </td>
 
           <td>{player?.position || '—'}</td>
@@ -284,7 +286,8 @@ export default function Franchise() {
             <p className="muted small">
               Fantasy points earned as a starter
               for this franchise only.
-              Scroll horizontally to see all weeks.
+              Click a player name to view
+              individual statistics.
             </p>
 
             {renderTable(currentPlayers)}
