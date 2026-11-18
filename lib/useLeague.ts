@@ -8,13 +8,18 @@ import type {
   Matchup,
   Players
 } from './sleeper';
-
+export type PlayerStats = {
+  total: number;
+  starts: number;
+  weekly: Record<number, number>;
+};
 export type Data = {
   league: League;
   rosters: Roster[];
   users: User[];
   matchups: Matchup[];
   players: Players;
+  playerStats: Record<string, PlayerStats>;
   week: number;
   currentWeek: number;
   fetchedAt: string;
