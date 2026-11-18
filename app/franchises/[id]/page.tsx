@@ -22,7 +22,8 @@ export default function Franchise() {
     .map(id => ({
       id,
       player: data?.players?.[id],
-      starter: roster?.starters?.includes(id) ?? false
+      starter: roster?.starters?.includes(id) ?? false,
+      stats: data?.playerStats?.[id]
     }))
     .sort((a, b) => Number(b.starter) - Number(a.starter));
 
@@ -115,6 +116,11 @@ export default function Franchise() {
             <section className="panel">
               <h2>Current Roster</h2>
 
+              <p className="muted small">
+                Fantasy points count only when a player
+                was selected as a starter in the XII-L.
+              </p>
+
               <div className="tableScroll">
                 <table>
                   <thead>
@@ -122,12 +128,14 @@ export default function Franchise() {
                       <th>Player</th>
                       <th>Position</th>
                       <th>Status</th>
+                      <th>Starts</th>
+                      <th>Total PTS</th>
                     </tr>
                   </thead>
 
                   <tbody>
                     {rosterPlayers.map(
-                      ({ id, player, starter }) => (
+                      ({ id, player, starter, stats }) => (
                         <tr key={id}>
                           <td>
                             {player?.full_name ||
@@ -148,6 +156,14 @@ export default function Franchise() {
                             {starter
                               ? 'Starter'
                               : 'Bench / reserve'}
+                          </td>
+
+                          <td>
+                            {stats?.starts ?? 0}
+                          </td>
+
+                          <td>
+                            {(stats?.total ?? 0).toFixed(2)}
                           </td>
                         </tr>
                       )
