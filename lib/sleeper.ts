@@ -13,3 +13,24 @@ export function teamName(roster:Roster,users:User[]){const u=users.find(x=>x.use
 export function points(settings:Record<string,number>|undefined,key:'fpts'|'fpts_against'){return (settings?.[key]||0)+(settings?.[`${key}_decimal`]||0)/100;}
 export function standings(rosters:Roster[]){return [...rosters].sort((a,b)=>{const x=a.settings||{},y=b.settings||{};return ((y.wins||0)+.5*(y.ties||0))-((x.wins||0)+.5*(x.ties||0))||points(y,'fpts')-points(x,'fpts')});}
 export function pairMatchups(rows:Matchup[]){const groups=new Map<number,Matchup[]>();for(const row of rows){if(row.matchup_id===null||row.matchup_id===undefined)continue;const list=groups.get(row.matchup_id)||[];list.push(row);groups.set(row.matchup_id,list);}return [...groups.entries()].sort((a,b)=>a[0]-b[0]).map(([id,teams])=>({id,teams}));}
+ last_name?: string | null;
+  full_name?: string | null;
+  position?: string | null;
+  team?: string | null;
+  status?: string | null;
+};
+
+export type Players = Record<string, Player>;
+
+export async function getPlayers(): Promise<Players> {
+  const response = await fetch(
+    'https://api.sleeper.app/v1/players/nfl',
+    { next: { revalidate: 86400 } }
+  );
+
+  if (!response.ok) {
+    throw new Error('Could not load Sleeper players');
+  }
+
+  return response.json() as Promise<Players>;
+}
