@@ -1,6 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import {
+  useEffect,
+  useState,
+  useCallback
+} from 'react';
+
 import type {
   League,
   Roster,
@@ -8,18 +13,29 @@ import type {
   Matchup,
   Players
 } from './sleeper';
+
 export type PlayerStats = {
   total: number;
   starts: number;
   weekly: Record<number, number>;
 };
+
 export type Data = {
   league: League;
   rosters: Roster[];
   users: User[];
   matchups: Matchup[];
   players: Players;
+
+  // Individual player statistics
   playerStats: Record<string, PlayerStats>;
+
+  // Historical statistics per franchise and player
+  franchisePlayerStats: Record<
+    string,
+    Record<string, PlayerStats>
+  >;
+
   week: number;
   currentWeek: number;
   fetchedAt: string;
@@ -44,13 +60,17 @@ export function useLeague(week?: number) {
       const json = await res.json();
 
       if (!res.ok) {
-        throw new Error(json.error || 'Import failed');
+        throw new Error(
+          json.error || 'Import failed'
+        );
       }
 
       setData(json);
     } catch (e) {
       setError(
-        e instanceof Error ? e.message : 'Unknown error'
+        e instanceof Error
+          ? e.message
+          : 'Unknown error'
       );
     } finally {
       setLoading(false);
