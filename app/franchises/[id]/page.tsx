@@ -8,6 +8,7 @@ import { Hero, State, fmt, Refresh } from '../../components';
 
 export default function Franchise() {
   const params = useParams();
+
   const { data, loading, error, refresh } = useLeague();
 
   const roster = data?.rosters.find(
@@ -18,6 +19,15 @@ export default function Franchise() {
     u => u.user_id === roster?.owner_id
   );
 
+  // All played weeks, including the current week
+  const weeks = data
+    ? Array.from(
+        { length: Math.min(18, Math.max(1, data.currentWeek)) },
+        (_, index) => index + 1
+      )
+    : [];
+
+  // Current franchise roster
   const rosterPlayers = (roster?.players ?? [])
     .map(id => ({
       id,
@@ -25,7 +35,18 @@ export default function Franchise() {
       starter: roster?.starters?.includes(id) ?? false,
       stats: data?.playerStats?.[id]
     }))
-    .sort((a, b) => Number(b.starter) - Number(a.starter));
+    .sort((a, b) => {
+      // Starters first
+      const starterDifference =
+        Number(b.starter) - Number(a.starter);
+
+      if (starterDifference !== 0) {
+        return starterDifference;
+      }
+
+      // Then highest fantasy points
+      return (b.stats?.total ?? 0) - (a.stats?.total ?? 0);
+    });
 
   return (
     <main className="wrap main">
@@ -114,11 +135,12 @@ export default function Franchise() {
             </section>
 
             <section className="panel">
-              <h2>Current Roster</h2>
+              <h2>Player Fantasy Points</h2>
 
               <p className="muted small">
-                Fantasy points count only when a player
-                was selected as a starter in the XII-L.
+                Only fantasy points earned as a starter
+                count towards XII-L season totals.
+                Scroll horizontally to see all weeks.
               </p>
 
               <div className="tableScroll">
@@ -126,9 +148,16 @@ export default function Franchise() {
                   <thead>
                     <tr>
                       <th>Player</th>
-                      <th>Position</th>
+                      <th>POS</th>
                       <th>Status</th>
                       <th>Starts</th>
+
+                      {weeks.map(week => (
+                        <th key={week}>
+                          W{week}
+                        </th>
+                      ))}
+
                       <th>Total PTS</th>
                     </tr>
                   </thead>
@@ -162,8 +191,21 @@ export default function Franchise() {
                             {stats?.starts ?? 0}
                           </td>
 
+                          {weeks.map(week => {
+                            const score =
+                              stats?.weekly?.[week] ?? 0;
+
+                            return (
+                              <td key={week}>
+                                {score.toFixed(2)}
+                              </td>
+                            );
+                          })}
+
                           <td>
-                            {(stats?.total ?? 0).toFixed(2)}
+                            <strong>
+                              {(stats?.total ?? 0).toFixed(2)}
+                            </strong>
                           </td>
                         </tr>
                       )
