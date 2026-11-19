@@ -5,7 +5,7 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'XII-L | Official Stats Portal',
   description:
-    'The Road to the Crown. XII-L fantasy football standings, matchups, franchises and player statistics.'
+    'The Road to the Crown. XII-L fantasy football standings, matchups, franchises, player statistics and records.'
 };
 
 const nav = [
@@ -13,7 +13,8 @@ const nav = [
   ['/standings', 'Standings'],
   ['/matchups', 'Matchups'],
   ['/franchises', 'Franchises'],
-  ['/players', 'Players']
+  ['/players', 'Players'],
+  ['/records', 'Records']
 ];
 
 export default function RootLayout({
