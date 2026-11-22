@@ -2,7 +2,16 @@
 
 import Link from 'next/link';
 import { useLeague } from '@/lib/useLeague';
-import { Hero, State, Refresh } from '../components';
+import type { HistoricalMatchup } from '@/lib/useLeague';
+import {
+  teamName,
+  points
+} from '@/lib/sleeper';
+import {
+  Hero,
+  State,
+  Refresh
+} from '../components';
 
 type PlayerRecord = {
   id: string;
@@ -20,6 +29,7 @@ export default function RecordsPage() {
 
   const season = data?.league.season ?? '2026';
 
+  // Individual player records
   const records: PlayerRecord[] = data
     ? Object.entries(data.playerStats)
         .map(([id, stats]) => {
@@ -101,6 +111,139 @@ export default function RecordsPage() {
     );
   }
 
+  // Franchise records
+  const franchiseName = (rosterId: number) => {
+    const roster = data?.rosters.find(
+      r => r.roster_id === rosterId
+    );
+
+    return roster && data
+      ? teamName(roster, data.users)
+      : `Roster ${rosterId}`;
+  };
+
+  function franchiseLink(rosterId?: number) {
+    if (rosterId === undefined) return '—';
+
+    return (
+      <Link href={`/franchises/${rosterId}`}>
+        {franchiseName(rosterId)}
+      </Link>
+    );
+  }
+
+  // Exclude the current, potentially unfinished week
+  const completedWeekLimit = data
+    ? Math.max(0, data.currentWeek - 1)
+    : 0;
+
+  const historical: HistoricalMatchup[] =
+    (data?.historicalMatchups ?? [])
+      .filter(row =>
+        row.week <= completedWeekLimit &&
+        Number.isFinite(row.points) &&
+        row.matchupId !== null
+      );
+
+  const highestScore = [...historical].sort(
+    (a, b) =>
+      b.points - a.points ||
+      a.week - b.week ||
+      a.rosterId - b.rosterId
+  )[0];
+
+  const lowestScore = [...historical].sort(
+    (a, b) =>
+      a.points - b.points ||
+      a.week - b.week ||
+      a.rosterId - b.rosterId
+  )[0];
+
+  // Compare opponents within the same matchup and week
+  const victories: {
+    winner: HistoricalMatchup;
+    loser: HistoricalMatchup;
+    margin: number;
+  }[] = [];
+
+  const matchupGroups = new Map<
+    string,
+    HistoricalMatchup[]
+  >();
+
+  historical.forEach(row => {
+    const key = `${row.week}-${row.matchupId}`;
+    const group = matchupGroups.get(key) ?? [];
+    group.push(row);
+    matchupGroups.set(key, group);
+  });
+
+  matchupGroups.forEach(group => {
+    if (group.length !== 2) return;
+
+    const [first, second] = group;
+
+    if (first.points === second.points) return;
+
+    const winner =
+      first.points > second.points ? first : second;
+
+    const loser =
+      first.points > second.points ? second : first;
+
+    victories.push({
+      winner,
+      loser,
+      margin: winner.points - loser.points
+    });
+  });
+
+  const biggestVictory = victories.sort(
+    (a, b) =>
+      b.margin - a.margin ||
+      a.winner.week - b.winner.week
+  )[0];
+
+  // Season standings records
+  const franchiseSeasonStats = data?.rosters.map(
+    roster => {
+      const settings = roster.settings ?? {};
+
+      const wins = settings.wins ?? 0;
+      const losses = settings.losses ?? 0;
+      const ties = settings.ties ?? 0;
+
+      const games = wins + losses + ties;
+
+      return {
+        rosterId: roster.roster_id,
+        pointsFor: points(settings, 'fpts'),
+        pointsAgainst: points(settings, 'fpts_against'),
+        winPercentage:
+          games > 0
+            ? (wins + ties * 0.5) / games
+            : 0,
+        games
+      };
+    }
+  ) ?? [];
+
+  const mostPointsFor = [...franchiseSeasonStats]
+    .sort((a, b) => b.pointsFor - a.pointsFor)[0];
+
+  const mostPointsAgainst = [...franchiseSeasonStats]
+    .sort(
+      (a, b) => b.pointsAgainst - a.pointsAgainst
+    )[0];
+
+  const bestWinPercentage = [...franchiseSeasonStats]
+    .filter(team => team.games > 0)
+    .sort(
+      (a, b) =>
+        b.winPercentage - a.winPercentage ||
+        b.pointsFor - a.pointsFor
+    )[0];
+
   return (
     <main className="wrap main">
       <Hero
@@ -124,9 +267,9 @@ export default function RecordsPage() {
             </p>
 
             <p className="muted small">
-              Future XII-L seasons will be added
-              when their historical Sleeper data
-              becomes available.
+              Historical records from future XII-L
+              seasons will be added as they become
+              available.
             </p>
           </section>
 
@@ -183,9 +326,7 @@ export default function RecordsPage() {
                   <tr>
                     <td>Most Starts</td>
                     <td>{playerLink(startsLeader)}</td>
-                    <td>
-                      {startsLeader?.starts ?? '—'}
-                    </td>
+                    <td>{startsLeader?.starts ?? '—'}</td>
                   </tr>
                 </tbody>
               </table>
@@ -227,6 +368,113 @@ export default function RecordsPage() {
                       </tr>
                     )
                   )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="panel">
+            <h2>Franchise Records — {season}</h2>
+
+            <p className="muted small">
+              Weekly records exclude the current
+              potentially unfinished week.
+            </p>
+
+            <div className="tableScroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Record</th>
+                    <th>Franchise</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  <tr>
+                    <td>Highest Team Score</td>
+                    <td>
+                      {franchiseLink(
+                        highestScore?.rosterId
+                      )}
+                    </td>
+                    <td>
+                      {highestScore
+                        ? `${highestScore.points.toFixed(2)} (W${highestScore.week})`
+                        : '—'}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td>Lowest Team Score</td>
+                    <td>
+                      {franchiseLink(
+                        lowestScore?.rosterId
+                      )}
+                    </td>
+                    <td>
+                      {lowestScore
+                        ? `${lowestScore.points.toFixed(2)} (W${lowestScore.week})`
+                        : '—'}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td>Biggest Victory</td>
+                    <td>
+                      {franchiseLink(
+                        biggestVictory?.winner.rosterId
+                      )}
+                    </td>
+                    <td>
+                      {biggestVictory
+                        ? `${biggestVictory.margin.toFixed(2)} (W${biggestVictory.winner.week})`
+                        : '—'}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td>Most Points For</td>
+                    <td>
+                      {franchiseLink(
+                        mostPointsFor?.rosterId
+                      )}
+                    </td>
+                    <td>
+                      {mostPointsFor
+                        ? mostPointsFor.pointsFor.toFixed(2)
+                        : '—'}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td>Most Points Against</td>
+                    <td>
+                      {franchiseLink(
+                        mostPointsAgainst?.rosterId
+                      )}
+                    </td>
+                    <td>
+                      {mostPointsAgainst
+                        ? mostPointsAgainst.pointsAgainst.toFixed(2)
+                        : '—'}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td>Best Win Percentage</td>
+                    <td>
+                      {franchiseLink(
+                        bestWinPercentage?.rosterId
+                      )}
+                    </td>
+                    <td>
+                      {bestWinPercentage
+                        ? `${(bestWinPercentage.winPercentage * 100).toFixed(1)}%`
+                        : '—'}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
