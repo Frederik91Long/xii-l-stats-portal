@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import {
-  LEAGUE_ID,
   sleeper,
   getPlayers,
   League,
@@ -9,6 +8,11 @@ import {
   User,
   Matchup
 } from '@/lib/sleeper';
+
+import {
+  getSeason,
+  getCurrentSeason
+} from '@/lib/seasons';
 
 export const runtime = 'nodejs';
 
@@ -32,16 +36,46 @@ type HistoricalMatchup = {
 
 export async function GET(request: NextRequest) {
   try {
-    const requested = Number(
+    // Select the requested XII-L season
+    const requestedSeason =
+      request.nextUrl.searchParams.get('season');
+
+    const season = requestedSeason
+      ? getSeason(requestedSeason)
+      : getCurrentSeason();
+
+    if (!season) {
+      return NextResponse.json(
+        {
+          error: `XII-L season ${requestedSeason} is not registered`
+        },
+        { status: 404 }
+      );
+    }
+
+    const leagueId = season.leagueId;
+
+    // Select requested week
+    const requestedWeek = Number(
       request.nextUrl.searchParams.get('week')
     );
 
-    const [league, rosters, users, state] = await Promise.all([
-      sleeper<League>(`/league/${LEAGUE_ID}`),
-      sleeper<Roster[]>(`/league/${LEAGUE_ID}/rosters`),
-      sleeper<User[]>(`/league/${LEAGUE_ID}/users`),
-      sleeper<{ week: number }>('/state/nfl')
-    ]);
+    // Load the correct Sleeper league
+    const [league, rosters, users, state] =
+      await Promise.all([
+        sleeper<League>(
+          `/league/${leagueId}`
+        ),
+        sleeper<Roster[]>(
+          `/league/${leagueId}/rosters`
+        ),
+        sleeper<User[]>(
+          `/league/${leagueId}/users`
+        ),
+        sleeper<{ week: number }>(
+          '/state/nfl'
+        )
+      ]);
 
     if (
       !league ||
@@ -51,39 +85,52 @@ export async function GET(request: NextRequest) {
       throw new Error('Invalid Sleeper response');
     }
 
-    const currentWeek =
-      Number(league.settings?.leg) ||
-      Number(state?.week) ||
-      1;
+    // For historical seasons, fetch all 18 weeks.
+    // For the active season, use the current league week.
+    const isCurrentSeason =
+      season.year === getCurrentSeason().year;
+
+    const currentWeek = isCurrentSeason
+      ? (
+          Number(league.settings?.leg) ||
+          Number(state?.week) ||
+          1
+        )
+      : 18;
 
     const week =
-      Number.isInteger(requested) &&
-      requested >= 1 &&
-      requested <= 18
-        ? requested
-        : Math.max(1, Math.min(18, currentWeek));
+      Number.isInteger(requestedWeek) &&
+      requestedWeek >= 1 &&
+      requestedWeek <= 18
+        ? requestedWeek
+        : Math.max(
+            1,
+            Math.min(18, currentWeek)
+          );
 
     const lastWeek = Math.max(
       1,
       Math.min(18, currentWeek)
     );
 
-    // Fetch historical matchups for the current season
+    // Fetch all available historical matchups
     const weeklyMatchups = await Promise.all(
-      Array.from({ length: lastWeek }, (_, index) =>
-        sleeper<Matchup[]>(
-          `/league/${LEAGUE_ID}/matchups/${index + 1}`
-        )
+      Array.from(
+        { length: lastWeek },
+        (_, index) =>
+          sleeper<Matchup[]>(
+            `/league/${leagueId}/matchups/${index + 1}`
+          )
       )
     );
 
     const matchups =
       weeklyMatchups[week - 1] ??
       await sleeper<Matchup[]>(
-        `/league/${LEAGUE_ID}/matchups/${week}`
+        `/league/${leagueId}/matchups/${week}`
       );
 
-    // Historical team scores for franchise records
+    // Historical franchise scores
     const historicalMatchups: HistoricalMatchup[] = [];
 
     weeklyMatchups.forEach((rows, index) => {
@@ -101,10 +148,10 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    // Individual player statistics across all franchises
+    // Individual player statistics
     const playerStats: Record<string, PlayerStats> = {};
 
-    // Historical player statistics per franchise
+    // Player statistics attributed to each franchise
     const franchisePlayerStats: FranchisePlayerStats = {};
 
     weeklyMatchups.forEach((rows, index) => {
@@ -125,9 +172,11 @@ export async function GET(request: NextRequest) {
             return;
           }
 
-          const score = Number(scores[playerId] ?? 0);
+          const score = Number(
+            scores[playerId] ?? 0
+          );
 
-          // Personal season statistics
+          // Personal statistics
           if (!playerStats[playerId]) {
             playerStats[playerId] = {
               total: 0,
@@ -137,13 +186,15 @@ export async function GET(request: NextRequest) {
           }
 
           playerStats[playerId].weekly[gameWeek] =
-            (playerStats[playerId].weekly[gameWeek] ?? 0) +
-            score;
+            (
+              playerStats[playerId].weekly[gameWeek] ??
+              0
+            ) + score;
 
           playerStats[playerId].total += score;
           playerStats[playerId].starts += 1;
 
-          // Points for the franchise where the player started
+          // Franchise-specific statistics
           if (!franchisePlayerStats[rosterId][playerId]) {
             franchisePlayerStats[rosterId][playerId] = {
               total: 0,
@@ -156,8 +207,10 @@ export async function GET(request: NextRequest) {
             franchisePlayerStats[rosterId][playerId];
 
           franchiseStats.weekly[gameWeek] =
-            (franchiseStats.weekly[gameWeek] ?? 0) +
-            score;
+            (
+              franchiseStats.weekly[gameWeek] ??
+              0
+            ) + score;
 
           franchiseStats.total += score;
           franchiseStats.starts += 1;
@@ -165,11 +218,13 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    // Include current and historical players
+    // Include current and former players
     const allPlayers = await getPlayers();
 
     const playerIds = new Set([
-      ...rosters.flatMap(roster => roster.players ?? []),
+      ...rosters.flatMap(
+        roster => roster.players ?? []
+      ),
       ...Object.keys(playerStats)
     ]);
 
@@ -189,9 +244,14 @@ export async function GET(request: NextRequest) {
         players,
         playerStats,
         franchisePlayerStats,
+
+        // Season information
+        season: season.year,
+        seasonName: season.name,
+
         week,
         currentWeek,
-        leagueId: LEAGUE_ID,
+        leagueId,
         fetchedAt: new Date().toISOString()
       },
       {
