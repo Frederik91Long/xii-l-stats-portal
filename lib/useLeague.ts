@@ -20,17 +20,28 @@ export type PlayerStats = {
   weekly: Record<number, number>;
 };
 
+export type HistoricalMatchup = {
+  week: number;
+  rosterId: number;
+  matchupId: number | null;
+  points: number;
+};
+
 export type Data = {
   league: League;
   rosters: Roster[];
   users: User[];
   matchups: Matchup[];
+
+  // Historical franchise scores
+  historicalMatchups: HistoricalMatchup[];
+
   players: Players;
 
   // Individual player statistics
   playerStats: Record<string, PlayerStats>;
 
-  // Historical statistics per franchise and player
+  // Player statistics attributed to each franchise
   franchisePlayerStats: Record<
     string,
     Record<string, PlayerStats>
