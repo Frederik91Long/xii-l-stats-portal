@@ -23,6 +23,13 @@ type FranchisePlayerStats = Record<
   Record<string, PlayerStats>
 >;
 
+type HistoricalMatchup = {
+  week: number;
+  rosterId: number;
+  matchupId: number | null;
+  points: number;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const requested = Number(
@@ -61,7 +68,7 @@ export async function GET(request: NextRequest) {
       Math.min(18, currentWeek)
     );
 
-    // Fetch all historical matchups
+    // Fetch historical matchups for the current season
     const weeklyMatchups = await Promise.all(
       Array.from({ length: lastWeek }, (_, index) =>
         sleeper<Matchup[]>(
@@ -76,10 +83,28 @@ export async function GET(request: NextRequest) {
         `/league/${LEAGUE_ID}/matchups/${week}`
       );
 
+    // Historical team scores for franchise records
+    const historicalMatchups: HistoricalMatchup[] = [];
+
+    weeklyMatchups.forEach((rows, index) => {
+      const gameWeek = index + 1;
+
+      rows.forEach(row => {
+        historicalMatchups.push({
+          week: gameWeek,
+          rosterId: row.roster_id,
+          matchupId: row.matchup_id ?? null,
+          points: Number(
+            row.custom_points ?? row.points ?? 0
+          )
+        });
+      });
+    });
+
     // Individual player statistics across all franchises
     const playerStats: Record<string, PlayerStats> = {};
 
-    // Historical player statistics per franchise roster ID
+    // Historical player statistics per franchise
     const franchisePlayerStats: FranchisePlayerStats = {};
 
     weeklyMatchups.forEach((rows, index) => {
@@ -118,7 +143,7 @@ export async function GET(request: NextRequest) {
           playerStats[playerId].total += score;
           playerStats[playerId].starts += 1;
 
-          // Statistics for the franchise where the player started
+          // Points for the franchise where the player started
           if (!franchisePlayerStats[rosterId][playerId]) {
             franchisePlayerStats[rosterId][playerId] = {
               total: 0,
@@ -160,6 +185,7 @@ export async function GET(request: NextRequest) {
         rosters,
         users,
         matchups,
+        historicalMatchups,
         players,
         playerStats,
         franchisePlayerStats,
