@@ -1,15 +1,69 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { Suspense } from 'react';
+
+import {
+  useParams,
+  useSearchParams
+} from 'next/navigation';
+
 import { useLeague } from '@/lib/useLeague';
 import { teamName, points } from '@/lib/sleeper';
-import { Hero, State, fmt, Refresh } from '../../components';
+
+import {
+  CURRENT_SEASON,
+  getAvailableSeasons
+} from '@/lib/seasons';
+
+import {
+  Hero,
+  State,
+  fmt,
+  Refresh
+} from '../../components';
 
 export default function Franchise() {
-  const params = useParams();
+  return (
+    <Suspense
+      fallback={
+        <main className="wrap main">
+          <div className="loading">
+            Loading franchise profile...
+          </div>
+        </main>
+      }
+    >
+      <FranchiseContent />
+    </Suspense>
+  );
+}
 
-  const { data, loading, error, refresh } = useLeague();
+function FranchiseContent() {
+  const params = useParams();
+  const searchParams = useSearchParams();
+
+  const season =
+    searchParams.get('season') ?? CURRENT_SEASON;
+
+  const availableSeasons = getAvailableSeasons();
+
+  const isCurrentSeason =
+    season === CURRENT_SEASON;
+
+  const {
+    data: leagueData,
+    loading,
+    error,
+    refresh
+  } = useLeague(undefined, season);
+
+  // Prevent statistics from another season
+  // being displayed under the wrong year.
+  const data =
+    leagueData?.season === season
+      ? leagueData
+      : null;
 
   const roster = data?.rosters.find(
     r => String(r.roster_id) === String(params.id)
@@ -25,7 +79,7 @@ export default function Franchise() {
   const franchiseStats =
     data?.franchisePlayerStats?.[rosterId] ?? {};
 
-  // All played weeks, including current week
+  // Available weeks for the selected season
   const weeks = data
     ? Array.from(
         {
@@ -38,23 +92,27 @@ export default function Franchise() {
       )
     : [];
 
-  // Current roster player IDs
+  // Roster from the selected season
   const currentPlayerIds = roster?.players ?? [];
 
-  const currentPlayerSet = new Set(currentPlayerIds);
+  const currentPlayerSet =
+    new Set(currentPlayerIds);
 
-  // Historical players who started for this franchise
-  const historicalPlayerIds = Object.keys(franchiseStats);
+  // Players who started for this franchise
+  const historicalPlayerIds =
+    Object.keys(franchiseStats);
 
-  // Players who started here but are no longer on roster
-  const formerPlayerIds = historicalPlayerIds.filter(
-    id => !currentPlayerSet.has(id)
-  );
+  // Former starters from this season
+  const formerPlayerIds =
+    historicalPlayerIds.filter(
+      id => !currentPlayerSet.has(id)
+    );
 
   const buildPlayer = (id: string) => ({
     id,
     player: data?.players?.[id],
-    starter: roster?.starters?.includes(id) ?? false,
+    starter:
+      roster?.starters?.includes(id) ?? false,
     stats: franchiseStats[id]
   });
 
@@ -97,7 +155,9 @@ export default function Franchise() {
       ({ id, player, starter, stats }) => (
         <tr key={id}>
           <td>
-            <Link href={`/players/${id}`}>
+            <Link
+              href={`/players/${id}?season=${season}`}
+            >
               {player?.full_name ||
                 [
                   player?.first_name,
@@ -174,9 +234,43 @@ export default function Franchise() {
 
   return (
     <main className="wrap main">
+
       <Link href="/franchises" className="back">
         ← All franchises
       </Link>
+
+      <section className="panel">
+        <h2>Available Seasons</h2>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '12px',
+            flexWrap: 'wrap'
+          }}
+        >
+          {availableSeasons.map(item => (
+            <Link
+              key={item.year}
+              className="button"
+              href={
+                `/franchises?season=${item.year}`
+              }
+            >
+              {item.year} — {item.name}
+            </Link>
+          ))}
+        </div>
+
+        <p className="muted small">
+          Viewing season: {season}
+        </p>
+
+        <p className="muted small">
+          Franchise roster IDs may differ
+          between seasons.
+        </p>
+      </section>
 
       <State
         loading={loading}
@@ -186,7 +280,8 @@ export default function Franchise() {
 
       {data && !roster && (
         <div className="error">
-          Franchise not found in Sleeper.
+          Franchise not found in the
+          {` ${season} `}season.
         </div>
       )}
 
@@ -197,7 +292,7 @@ export default function Franchise() {
               roster,
               data.users
             ).toUpperCase()}
-            subtitle={`Franchise profile · ${data.league.season} XII-L season`}
+            subtitle={`Franchise profile · ${season} XII-L season`}
           />
 
           <section className="kpis">
@@ -237,7 +332,11 @@ export default function Franchise() {
               <strong>
                 {currentPlayers.length}
               </strong>
-              <span>Current Players</span>
+              <span>
+                {isCurrentSeason
+                  ? 'Current Players'
+                  : 'Roster Players'}
+              </span>
             </div>
 
             <div className="kpi">
@@ -255,7 +354,9 @@ export default function Franchise() {
           />
 
           <section className="panel">
-            <h2>Franchise Information</h2>
+            <h2>
+              Franchise Information — {season}
+            </h2>
 
             <p>
               <span className="muted">
@@ -278,28 +379,49 @@ export default function Franchise() {
               </span>
               {data.league.name}
             </p>
+
+            <p>
+              <span className="muted">
+                Season:{' '}
+              </span>
+              {season}
+            </p>
           </section>
 
           <section className="panel">
-            <h2>Current Roster</h2>
+            <h2>
+              {isCurrentSeason
+                ? 'Current Roster'
+                : `Season Roster — ${season}`}
+            </h2>
 
             <p className="muted small">
               Fantasy points earned as a starter
-              for this franchise only.
+              for this franchise during the
+              selected season only.
               Click a player name to view
               individual statistics.
             </p>
+
+            {!isCurrentSeason && (
+              <p className="muted small">
+                Historical roster based on the
+                latest available Sleeper roster
+                for this season.
+              </p>
+            )}
 
             {renderTable(currentPlayers)}
           </section>
 
           <section className="panel">
-            <h2>Former Players</h2>
+            <h2>Former Players — {season}</h2>
 
             <p className="muted small">
-              Players who previously started for
-              this franchise but are no longer
-              on the current roster.
+              Players who started for this
+              franchise during the selected
+              season but are no longer on
+              its available season roster.
             </p>
 
             {formerPlayers.length > 0 ? (
