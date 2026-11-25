@@ -26,6 +26,8 @@ import {
   getFranchiseByRoster
 } from '@/lib/franchises';
 
+import { calculatePlayoffScenarios } from '@/lib/playoffScenarios';
+
 export const runtime = 'nodejs';
 
 type ScheduledGame = {
@@ -562,6 +564,32 @@ export async function GET(
       warnings: bracketWarnings.sort()
     };
 
+    const scenarioResults = calculatePlayoffScenarios(
+      standings,
+      config.playoffTeams,
+      config.byeTeams,
+      config.regularSeasonEnd,
+      unavailableScheduleWeeks.length === 0 &&
+        standings.every(team => team.gamesPlayed === completedRegularWeeks)
+    );
+
+    const scenariosByRoster = new Map(
+      scenarioResults.map(result => [result.rosterId, result])
+    );
+
+    const enrichedStandings = standings.map(team => ({
+      ...team,
+      scenario: scenariosByRoster.get(team.rosterId) ?? null
+    }));
+
+    const scenarioCalculation = scenarioResults.some(result => result.status === 'unknown')
+      ? 'unavailable'
+      : remainingWeeks === 0
+        ? 'finalRecordAndPointsFor'
+        : remainingWeeks * (config.franchiseCount / 2 - 1) > 12
+          ? 'conservativeBounds'
+          : 'scheduleAwareBounds';
+
     return NextResponse.json(
       {
         season: season.year,
@@ -591,9 +619,11 @@ export async function GET(
 
         unavailableScheduleWeeks,
 
-        standings,
-        playoffTeams,
-        byeTeams,
+        standings: enrichedStandings,
+        playoffTeams: enrichedStandings.slice(0, config.playoffTeams),
+        byeTeams: enrichedStandings.slice(0, config.byeTeams),
+        scenarioResults,
+        scenarioCalculation,
         projectedWildCardMatchups,
         bracket,
 
