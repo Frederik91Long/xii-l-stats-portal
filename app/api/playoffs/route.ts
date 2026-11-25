@@ -133,22 +133,33 @@ export async function GET(
     const isComplete =
       league.status === 'complete';
 
+    const reportedWeek = Number(league.settings?.leg) ||
+      Number(state?.week) || 1;
+
+    // Standings may be updated before Sleeper advances its week.
+    const rosterGameCounts = rosters.map(roster => {
+      const settings = roster.settings ?? {};
+      return (settings.wins ?? 0) +
+        (settings.losses ?? 0) + (settings.ties ?? 0);
+    });
+
+    const commonGamesPlayed = rosterGameCounts[0];
+    const consistentRegularRecords =
+      Number.isInteger(commonGamesPlayed) &&
+      commonGamesPlayed >= 0 &&
+      commonGamesPlayed <= config.regularSeasonEnd &&
+      rosterGameCounts.every(count => count === commonGamesPlayed);
+
     const currentWeek = isComplete
       ? config.championshipWeek + 1
-      : Number(league.settings?.leg) ||
-        Number(state?.week) ||
-        1;
+      : Math.max(reportedWeek,
+          consistentRegularRecords ? commonGamesPlayed + 1 : 1);
 
-    const completedRegularWeeks =
-      isComplete
-        ? config.regularSeasonEnd
-        : Math.max(
-            0,
-            Math.min(
-              config.regularSeasonEnd,
-              currentWeek - 1
-            )
-          );
+    const completedRegularWeeks = isComplete
+      ? config.regularSeasonEnd
+      : consistentRegularRecords
+        ? commonGamesPlayed
+        : Math.max(0, Math.min(config.regularSeasonEnd, currentWeek - 1));
 
     const remainingWeeks = Math.max(
       0,
