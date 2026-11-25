@@ -1,16 +1,68 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { Suspense } from 'react';
+import {
+  useParams,
+  useSearchParams,
+  useRouter
+} from 'next/navigation';
+
 import { useLeague } from '@/lib/useLeague';
 import { teamName } from '@/lib/sleeper';
-import { Hero, State, Refresh } from '../../components';
+
+import {
+  CURRENT_SEASON,
+  getAvailableSeasons
+} from '@/lib/seasons';
+
+import {
+  Hero,
+  State,
+  Refresh
+} from '../../components';
 
 export default function PlayerProfile() {
+  return (
+    <Suspense
+      fallback={
+        <main className="wrap main">
+          <div className="loading">
+            Loading player profile...
+          </div>
+        </main>
+      }
+    >
+      <PlayerProfileContent />
+    </Suspense>
+  );
+}
+
+function PlayerProfileContent() {
   const params = useParams();
-  const { data, loading, error, refresh } = useLeague();
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   const playerId = String(params.id);
+
+  const season =
+    searchParams.get('season') ?? CURRENT_SEASON;
+
+  const availableSeasons = getAvailableSeasons();
+
+  const {
+    data: leagueData,
+    loading,
+    error,
+    refresh
+  } = useLeague(undefined, season);
+
+  // Prevent data from another season being displayed
+  const data =
+    leagueData?.season === season
+      ? leagueData
+      : null;
+
   const player = data?.players?.[playerId];
   const stats = data?.playerStats?.[playerId];
 
@@ -23,7 +75,9 @@ export default function PlayerProfile() {
 
   const total = stats?.total ?? 0;
   const starts = stats?.starts ?? 0;
-  const average = starts > 0 ? total / starts : 0;
+
+  const average =
+    starts > 0 ? total / starts : 0;
 
   const weeks = data
     ? Array.from(
@@ -54,11 +108,38 @@ export default function PlayerProfile() {
         )
     : [];
 
+  function changeSeason(nextSeason: string) {
+    router.push(
+      `/players/${playerId}?season=${nextSeason}`
+    );
+  }
+
   return (
     <main className="wrap main">
-      <Link href="/franchises" className="back">
-        ← All franchises
+
+      <Link href="/players" className="back">
+        ← All players
       </Link>
+
+      <section className="panel">
+        <h2>Select Season</h2>
+
+        <select
+          value={season}
+          onChange={event =>
+            changeSeason(event.target.value)
+          }
+        >
+          {availableSeasons.map(item => (
+            <option
+              key={item.year}
+              value={item.year}
+            >
+              {item.year} — {item.name}
+            </option>
+          ))}
+        </select>
+      </section>
 
       <State
         loading={loading}
@@ -68,7 +149,7 @@ export default function PlayerProfile() {
 
       {data && !player && !stats && (
         <div className="error">
-          Player not found.
+          Player not found in the {season} season.
         </div>
       )}
 
@@ -76,18 +157,19 @@ export default function PlayerProfile() {
         <>
           <Hero
             title={playerName.toUpperCase()}
-            subtitle={`${player?.position || 'Player'} · XII-L ${data.league.season}`}
+            subtitle={`${player?.position || 'Player'} · XII-L ${season}`}
           />
 
           <section className="kpis">
+
             <div className="kpi">
               <strong>{total.toFixed(2)}</strong>
-              <span>Career Fantasy PTS</span>
+              <span>Season Fantasy PTS</span>
             </div>
 
             <div className="kpi">
               <strong>{starts}</strong>
-              <span>Total Starts</span>
+              <span>Season Starts</span>
             </div>
 
             <div className="kpi">
@@ -96,9 +178,12 @@ export default function PlayerProfile() {
             </div>
 
             <div className="kpi">
-              <strong>{franchiseHistory.length}</strong>
+              <strong>
+                {franchiseHistory.length}
+              </strong>
               <span>Franchises Started For</span>
             </div>
+
           </section>
 
           <Refresh
@@ -108,7 +193,7 @@ export default function PlayerProfile() {
           />
 
           <section className="panel">
-            <h2>Weekly Performance</h2>
+            <h2>Weekly Performance — {season}</h2>
 
             <p className="muted small">
               Only points earned as a starter
@@ -141,7 +226,9 @@ export default function PlayerProfile() {
                       <tr key={week}>
                         <td>Week {week}</td>
                         <td>{score.toFixed(2)}</td>
-                        <td>{started ? 'Yes' : 'No'}</td>
+                        <td>
+                          {started ? 'Yes' : 'No'}
+                        </td>
                       </tr>
                     );
                   })}
@@ -151,7 +238,7 @@ export default function PlayerProfile() {
           </section>
 
           <section className="panel">
-            <h2>Franchise History</h2>
+            <h2>Franchise History — {season}</h2>
 
             <div className="tableScroll">
               <table>
@@ -166,7 +253,10 @@ export default function PlayerProfile() {
 
                 <tbody>
                   {franchiseHistory.map(
-                    ({ roster, stats: franchiseStats }) => {
+                    ({
+                      roster,
+                      stats: franchiseStats
+                    }) => {
                       const franchiseStarts =
                         franchiseStats?.starts ?? 0;
 
@@ -183,7 +273,7 @@ export default function PlayerProfile() {
                         <tr key={roster.roster_id}>
                           <td>
                             <Link
-                              href={`/franchises/${roster.roster_id}`}
+                              href={`/franchises/${roster.roster_id}?season=${season}`}
                             >
                               {teamName(
                                 roster,
@@ -211,7 +301,8 @@ export default function PlayerProfile() {
 
             {franchiseHistory.length === 0 && (
               <p className="muted">
-                No XII-L starts recorded yet.
+                No XII-L starts recorded
+                in this season.
               </p>
             )}
           </section>
