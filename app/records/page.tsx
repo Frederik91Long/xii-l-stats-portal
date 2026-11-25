@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CURRENT_SEASON, getAvailableSeasons } from '@/lib/seasons';
 import { useLeague } from '@/lib/useLeague';
 import type { HistoricalMatchup } from '@/lib/useLeague';
@@ -485,17 +485,148 @@ export default function RecordsPage() {
             </div>
           </section>
 
-          <section className="panel">
-            <h2>All-Time XII-L Records</h2>
 
-            <p className="muted">
-              All-time records will become available
-              when multiple XII-L seasons have been
-              imported and stored.
-            </p>
+        </>
+      )}
+      <AllTimeRecords />
+    </main>
+  );
+}
+
+type CareerPlayer = {
+  id: string;
+  name: string;
+  position: string;
+  total: number;
+  starts: number;
+  average: number;
+  seasonsPlayed: number;
+  seasons: Record<string, unknown>;
+  bestGame: { season: string; week: number; points: number } | null;
+};
+
+type SingleSeason = {
+  playerId: string;
+  name: string;
+  season: string;
+  total: number;
+  starts: number;
+};
+
+type AllTimeData = {
+  importedSeasons: string[];
+  minimumCareerStarts: number;
+  records: {
+    careerScoringLeader: CareerPlayer | null;
+    mostCareerStarts: CareerPlayer | null;
+    bestCareerAverage: CareerPlayer | null;
+    highestSingleGame: CareerPlayer | null;
+    highestSingleSeason: SingleSeason | null;
+    mostStartsInSeason: SingleSeason | null;
+    positionLeaders: { position: string; player: CareerPlayer | null }[];
+  };
+  leaderboard: CareerPlayer[];
+};
+
+function AllTimeRecords() {
+  const [data, setData] = useState<AllTimeData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [position, setPosition] = useState('ALL');
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<'total' | 'starts' | 'average' | 'seasonsPlayed'>('total');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    fetch('/api/all-time', { cache: 'no-store', signal: controller.signal })
+      .then(async response => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'All-time import failed');
+        if (!result.records || !Array.isArray(result.leaderboard)) {
+          throw new Error('Invalid all-time API response');
+        }
+        if (!controller.signal.aborted) setData(result);
+      })
+      .catch(error => {
+        if (!controller.signal.aborted) {
+          setError(error instanceof Error ? error.message : 'Unknown error');
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [attempt]);
+
+  function careerLink(player: CareerPlayer | null, year?: string) {
+    if (!player) return '—';
+    const season = year ?? Object.keys(player.seasons).sort((a, b) => Number(b) - Number(a))[0] ?? CURRENT_SEASON;
+    return <Link href={`/players/${player.id}?season=${season}`}>{player.name}</Link>;
+  }
+
+  function seasonLink(player: SingleSeason | null) {
+    return player ? <Link href={`/players/${player.playerId}?season=${player.season}`}>{player.name}</Link> : '—';
+  }
+
+  const r = data?.records;
+  const leaderboard = (data?.leaderboard ?? [])
+    .filter(player => position === 'ALL' || player.position === position)
+    .filter(player => player.name.toLowerCase().includes(search.trim().toLowerCase()))
+    .sort((a, b) => b[sort] - a[sort] || b.total - a.total || a.name.localeCompare(b.name));
+
+  return (
+    <>
+      <section className="panel">
+        <h2>All-Time XII-L Player Records</h2>
+        <State loading={loading} error={error} refresh={() => setAttempt(value => value + 1)} />
+        {data && r && (
+          <>
+            <p className="muted small">Imported seasons: {data.importedSeasons.join(', ')}. Starter points only. Current week scores may be provisional.</p>
+            <button className="button" disabled={loading} onClick={() => setAttempt(value => value + 1)}>Refresh All-Time Records</button>
+            <div className="tableScroll">
+              <table>
+                <thead><tr><th>Record</th><th>Player</th><th>Value</th></tr></thead>
+                <tbody>
+                  <tr><td>Career Scoring Leader</td><td>{careerLink(r.careerScoringLeader)}</td><td>{r.careerScoringLeader?.total.toFixed(2) ?? '—'}</td></tr>
+                  <tr><td>Most Career Starts</td><td>{careerLink(r.mostCareerStarts)}</td><td>{r.mostCareerStarts?.starts ?? '—'}</td></tr>
+                  <tr><td>Best Career Average (min. {data.minimumCareerStarts} starts)</td><td>{careerLink(r.bestCareerAverage)}</td><td>{r.bestCareerAverage?.average.toFixed(2) ?? '—'}</td></tr>
+                  <tr><td>Highest Single Game Score</td><td>{careerLink(r.highestSingleGame, r.highestSingleGame?.bestGame?.season)}</td><td>{r.highestSingleGame?.bestGame ? `${r.highestSingleGame.bestGame.points.toFixed(2)} (W${r.highestSingleGame.bestGame.week}, ${r.highestSingleGame.bestGame.season})` : '—'}</td></tr>
+                  <tr><td>Highest Single Season Score</td><td>{seasonLink(r.highestSingleSeason)}</td><td>{r.highestSingleSeason ? `${r.highestSingleSeason.total.toFixed(2)} (${r.highestSingleSeason.season})` : '—'}</td></tr>
+                  <tr><td>Most Starts in a Season</td><td>{seasonLink(r.mostStartsInSeason)}</td><td>{r.mostStartsInSeason ? `${r.mostStartsInSeason.starts} (${r.mostStartsInSeason.season})` : '—'}</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+      {data && r && (
+        <>
+          <section className="panel">
+            <h2>All-Time Position Leaders</h2>
+            <div className="tableScroll"><table>
+              <thead><tr><th>Position</th><th>Player</th><th>Career PTS</th><th>Starts</th><th>AVG</th></tr></thead>
+              <tbody>{r.positionLeaders.map(({position, player}) => <tr key={position}><td>{position}</td><td>{careerLink(player)}</td><td>{player?.total.toFixed(2) ?? '—'}</td><td>{player?.starts ?? '—'}</td><td>{player?.average.toFixed(2) ?? '—'}</td></tr>)}</tbody>
+            </table></div>
+          </section>
+          <section className="panel">
+            <h2>All-Time Player Leaderboard</h2>
+            <div className="toolbar" style={{flexWrap: 'wrap', gap: 12}}>
+              <label>Position <select value={position} onChange={event => setPosition(event.target.value)}>{['ALL','QB','RB','WR','TE'].map(pos => <option key={pos} value={pos}>{pos}</option>)}</select></label>
+              <label>Sort by <select value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="total">Career PTS</option><option value="starts">Starts</option><option value="average">Average</option><option value="seasonsPlayed">Seasons</option></select></label>
+              <label>Search <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Player name" /></label>
+            </div>
+            <p className="muted small">{leaderboard.length} players. Average sorting includes all starters; the 10-start minimum applies to the career average record only. Career links open the latest season played.</p>
+            <div className="tableScroll"><table>
+              <thead><tr><th>#</th><th>Player</th><th>POS</th><th>Seasons</th><th>Starts</th><th>Career PTS</th><th>AVG</th></tr></thead>
+              <tbody>{leaderboard.map((player, index) => <tr key={player.id}><td>{index + 1}</td><td>{careerLink(player)}</td><td>{player.position}</td><td>{player.seasonsPlayed}</td><td>{player.starts}</td><td>{player.total.toFixed(2)}</td><td>{player.average.toFixed(2)}</td></tr>)}</tbody>
+            </table></div>
+            {leaderboard.length === 0 && <p className="muted">No matching players.</p>}
           </section>
         </>
       )}
-    </main>
+    </>
   );
 }
