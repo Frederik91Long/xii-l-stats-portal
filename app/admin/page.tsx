@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import LogoutButton from './LogoutButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,7 +67,12 @@ export default async function AdminPage() {
           administrator permissions, or permissions
           could not be verified.
         </p>
-        <Link href="/">Return to Stats Portal</Link>
+
+        <LogoutButton />
+
+        <div style={{ marginTop: '24px' }}>
+          <Link href="/">Return to Stats Portal</Link>
+        </div>
       </main>
     );
   }
@@ -91,38 +97,52 @@ export default async function AdminPage() {
       >
         <div
           style={{
-            color: '#d4af37',
-            fontSize: '13px',
-            fontWeight: 700,
-            letterSpacing: '2px'
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            flexWrap: 'wrap',
+            gap: '20px'
           }}
         >
-          XII-L COMMISSIONER ACCESS
+          <div>
+            <div
+              style={{
+                color: '#d4af37',
+                fontSize: '13px',
+                fontWeight: 700,
+                letterSpacing: '2px'
+              }}
+            >
+              XII-L COMMISSIONER ACCESS
+            </div>
+
+            <h1 style={{ margin: '12px 0' }}>
+              Admin Center
+            </h1>
+
+            <p style={{ color: '#9ca3af' }}>
+              Welcome, {admin.display_name}.
+            </p>
+
+            <span
+              style={{
+                display: 'inline-block',
+                background: '#d4af37',
+                color: '#111827',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 700
+              }}
+            >
+              {admin.role === 'super_admin'
+                ? 'SUPER ADMIN'
+                : 'ADMIN'}
+            </span>
+          </div>
+
+          <LogoutButton />
         </div>
-
-        <h1 style={{ margin: '12px 0' }}>
-          Admin Center
-        </h1>
-
-        <p style={{ color: '#9ca3af' }}>
-          Welcome, {admin.display_name}.
-        </p>
-
-        <span
-          style={{
-            display: 'inline-block',
-            background: '#d4af37',
-            color: '#111827',
-            padding: '6px 12px',
-            borderRadius: '6px',
-            fontSize: '12px',
-            fontWeight: 700
-          }}
-        >
-          {admin.role === 'super_admin'
-            ? 'SUPER ADMIN'
-            : 'ADMIN'}
-        </span>
 
         <p
           style={{
