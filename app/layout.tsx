@@ -5,7 +5,7 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'XII-L | Official Stats Portal',
   description:
-    'The Road to the Crown. XII-L fantasy football standings, matchups, franchises, player statistics and records.'
+    'The Road to the Crown. XII-L fantasy football standings, matchups, franchises, player statistics, records, playoffs and championship history.'
 };
 
 const nav = [
@@ -14,7 +14,8 @@ const nav = [
   ['/matchups', 'Matchups'],
   ['/franchises', 'Franchises'],
   ['/players', 'Players'],
-  ['/records', 'Records']
+  ['/records', 'Records'],
+  ['/playoffs', 'Playoffs']
 ];
 
 export default function RootLayout({
@@ -23,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="nl">
+    <html lang="en">
       <body>
         <header className="top">
           <div className="wrap head">
