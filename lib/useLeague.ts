@@ -14,6 +14,8 @@ import type {
   Players
 } from './sleeper';
 
+import { CURRENT_SEASON } from './seasons';
+
 export type PlayerStats = {
   total: number;
   starts: number;
@@ -41,11 +43,15 @@ export type Data = {
   // Individual player statistics
   playerStats: Record<string, PlayerStats>;
 
-  // Player statistics attributed to each franchise
+  // Player statistics per franchise
   franchisePlayerStats: Record<
     string,
     Record<string, PlayerStats>
   >;
+
+  // Season information
+  season: string;
+  seasonName: string;
 
   week: number;
   currentWeek: number;
@@ -53,7 +59,10 @@ export type Data = {
   leagueId: string;
 };
 
-export function useLeague(week?: number) {
+export function useLeague(
+  week?: number,
+  season: string = CURRENT_SEASON
+) {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -63,8 +72,16 @@ export function useLeague(week?: number) {
     setError('');
 
     try {
+      const params = new URLSearchParams();
+
+      params.set('season', season);
+
+      if (week !== undefined) {
+        params.set('week', String(week));
+      }
+
       const res = await fetch(
-        `/api/league${week ? `?week=${week}` : ''}`,
+        `/api/league?${params.toString()}`,
         { cache: 'no-store' }
       );
 
@@ -78,6 +95,8 @@ export function useLeague(week?: number) {
 
       setData(json);
     } catch (e) {
+      setData(null);
+
       setError(
         e instanceof Error
           ? e.message
@@ -86,7 +105,7 @@ export function useLeague(week?: number) {
     } finally {
       setLoading(false);
     }
-  }, [week]);
+  }, [week, season]);
 
   useEffect(() => {
     refresh();
