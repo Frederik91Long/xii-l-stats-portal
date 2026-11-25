@@ -12,7 +12,16 @@ import {
 import { getAdminAuth } from '@/lib/admin/auth';
 import { getAdminNavigation } from '@/lib/admin/navigation';
 
+import {
+  getAdminDashboardData
+} from '@/lib/admin/dashboard';
+
+import type {
+  AdminDashboardData
+} from '@/lib/admin/dashboard';
+
 import AdminShell from './AdminShell';
+import AdminDashboardOverview from './AdminDashboardOverview';
 import LogoutButton from './LogoutButton';
 
 export const dynamic = 'force-dynamic';
@@ -62,6 +71,29 @@ export default async function AdminPage() {
 
   const admin = auth.admin;
 
+  let dashboardData: AdminDashboardData;
+
+  try {
+    dashboardData = await getAdminDashboardData();
+  } catch {
+    dashboardData = {
+      stats: {
+        publishedAwards: null,
+        draftAwards: null,
+        publishedHallOfFame: null,
+        draftHallOfFame: null,
+        auditRecords: null
+      },
+      recentActivity: [],
+      databaseStatus: 'unavailable',
+      activityAvailable: false,
+      warnings: [
+        'Dashboard data could not be loaded or administrator access could not be verified. Please refresh the page.'
+      ],
+      fetchedAt: new Date().toISOString()
+    };
+  }
+
   const modules = getAdminNavigation(admin.role)
     .filter(item => item.id !== 'dashboard');
 
@@ -71,6 +103,8 @@ export default async function AdminPage() {
       title="Dashboard"
       description={`Welcome, ${admin.displayName}. Manage the official XII-L Stats Portal from your commissioner workspace.`}
     >
+      <AdminDashboardOverview data={dashboardData} />
+
       <section
         style={{
           marginBottom: '24px'
@@ -101,7 +135,7 @@ export default async function AdminPage() {
         style={{
           display: 'grid',
           gridTemplateColumns:
-            'repeat(auto-fit, minmax(220px, 1fr))',
+            'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
           gap: '20px'
         }}
       >
@@ -208,7 +242,7 @@ export default async function AdminPage() {
         <h2
           style={{
             fontSize: '19px',
-            margin: '0 0 12px'
+            margin: '0 0 16px'
           }}
         >
           Admin Center Status
@@ -239,6 +273,24 @@ export default async function AdminPage() {
           }}
         >
           ✓ Admin navigation initialized
+        </p>
+
+        <p
+          style={{
+            color:
+              dashboardData.databaseStatus === 'connected'
+                ? '#86efac'
+                : dashboardData.databaseStatus === 'degraded'
+                  ? '#fbbf24'
+                  : '#f87171',
+            fontSize: '14px'
+          }}
+        >
+          {dashboardData.databaseStatus === 'connected'
+            ? '✓ Dashboard database queries successful'
+            : dashboardData.databaseStatus === 'degraded'
+              ? '⚠ Some dashboard queries failed'
+              : '✕ Dashboard data unavailable'}
         </p>
 
         <p
