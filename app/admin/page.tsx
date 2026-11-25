@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { getAdminAuth } from '@/lib/admin/auth';
 import LogoutButton from './LogoutButton';
 
 export const dynamic = 'force-dynamic';
@@ -29,30 +29,13 @@ const modules = [
 ];
 
 export default async function AdminPage() {
-  const supabase = await createClient();
+  const auth = await getAdminAuth();
 
-  const {
-    data: { user },
-    error: authError
-  } = await supabase.auth.getUser();
+  if (!auth.authorized) {
+    if (auth.reason === 'unauthenticated') {
+      redirect('/admin/login');
+    }
 
-  if (authError || !user) {
-    redirect('/admin/login');
-  }
-
-  const { data: admin, error: adminError } = await supabase
-    .from('admin_users')
-    .select('display_name, role, is_active')
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-    .maybeSingle();
-
-  if (
-    adminError ||
-    !admin ||
-    !admin.is_active ||
-    !['admin', 'super_admin'].includes(admin.role)
-  ) {
     return (
       <main
         style={{
@@ -62,10 +45,11 @@ export default async function AdminPage() {
         }}
       >
         <h1>Access Denied</h1>
+
         <p>
-          Your account does not have active XII-L
-          administrator permissions, or permissions
-          could not be verified.
+          {auth.reason === 'verification_failed'
+            ? 'Administrator permissions could not be verified. Please try again later.'
+            : 'Your account does not have active XII-L administrator permissions.'}
         </p>
 
         <LogoutButton />
@@ -76,6 +60,8 @@ export default async function AdminPage() {
       </main>
     );
   }
+
+  const admin = auth.admin;
 
   return (
     <main
@@ -121,7 +107,7 @@ export default async function AdminPage() {
             </h1>
 
             <p style={{ color: '#9ca3af' }}>
-              Welcome, {admin.display_name}.
+              Welcome, {admin.displayName}.
             </p>
 
             <span
