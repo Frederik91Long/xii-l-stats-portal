@@ -461,6 +461,112 @@ function ChampionshipHistory({ onSelectSeason, refreshKey }: {
   );
 }
 
+type CareerPlayoffTeam = {
+  franchiseId: string; name: string; appearances: number; byes: number;
+  championships: number; finals: number; games: number; wins: number; losses: number;
+  winPercentage: number | null; pointsFor: number; pointsAgainst: number;
+  averagePoints: number | null; longestWinningStreak: number; longestLosingStreak: number;
+};
+type CareerPlayoffGame = {
+  season: string; week: number; round: string; winner: HistoryFinalist;
+  loser: HistoryFinalist; winnerScore: number; loserScore: number; margin: number;
+};
+type CareerRecordHolder = { name?: string; franchise?: HistoryFinalist; opponent?: HistoryFinalist; winner?: HistoryFinalist; loser?: HistoryFinalist; season?: string; week?: number; round?: string };
+type CareerPlayoffData = {
+  summary: { totalPlayoffGames: number; totalPlayoffPoints: number; uniquePlayoffFranchises: number; totalFirstRoundByes: number; historyComplete: boolean };
+  standings: CareerPlayoffTeam[];
+  records: Record<string, { value: number; holders: CareerRecordHolder[] } | null>;
+  games: CareerPlayoffGame[];
+  seasonHistory: { season: string; status: string; completedGames: number }[];
+  warnings: string[]; fetchedAt: string;
+};
+const CAREER_RECORDS = [
+  ['mostPlayoffAppearances', 'Most Playoff Appearances', 'count'],
+  ['mostPlayoffWins', 'Most Playoff Wins', 'count'],
+  ['mostPlayoffLosses', 'Most Playoff Losses', 'count'],
+  ['bestPlayoffWinPercentage', 'Best Playoff Win Percentage', 'percent'],
+  ['mostFirstRoundByes', 'Most First-Round Byes', 'count'],
+  ['mostPlayoffPoints', 'Most Playoff Points', 'points'],
+  ['mostChampionships', 'Most Championships', 'count'],
+  ['longestWinningStreak', 'Longest Playoff Winning Streak', 'count'],
+  ['longestLosingStreak', 'Longest Playoff Losing Streak', 'count'],
+  ['highestPlayoffScore', 'Highest Playoff Score', 'points'],
+  ['lowestPlayoffScore', 'Lowest Playoff Score', 'points'],
+  ['biggestPlayoffVictory', 'Biggest Playoff Victory', 'points'],
+  ['closestPlayoffVictory', 'Closest Playoff Victory', 'points']
+] as const;
+
+function AllTimePlayoffRecords({ refreshKey }: { refreshKey: number }) {
+  const [data, setData] = useState<CareerPlayoffData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+  const [filter, setFilter] = useState('all');
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true); setError(''); setData(null);
+    async function load() {
+      try {
+        const response = await fetch('/api/all-time-playoffs', { cache: 'no-store', signal: controller.signal });
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error || 'Playoff records import failed');
+        if (!json.summary || !json.records || !Array.isArray(json.standings) || !Array.isArray(json.games) || !Array.isArray(json.seasonHistory) || !Array.isArray(json.warnings)) throw new Error('Invalid playoff records response');
+        if (!controller.signal.aborted) setData(json);
+      } catch (err) {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Unknown error');
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+    load();
+    return () => controller.abort();
+  }, [refreshKey, retry]);
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 };
+  const visibleGames = data?.games.filter(game => filter === 'all' || game.season === filter) ?? [];
+  const percent = (value: number | null) => value === null ? '—' : `${(value * 100).toFixed(1)}%`;
+  const teamLink = (team: HistoryFinalist, season: string) => <Link href={`/franchises/${team.rosterId}?season=${encodeURIComponent(season)}`}>{team.name}</Link>;
+  return <section id="all-time-playoff-records" style={{ marginTop: 48 }}>
+    <div style={{ color: '#d4af37', fontWeight: 700, letterSpacing: 2, fontSize: 12 }}>XII-L LEGACY</div>
+    <h2>All-Time Playoff Records</h2>
+    <p className="muted">Every game. Every victory. Every legacy.</p>
+    <p className="muted small">Championship bracket only. Byes are not wins. All seasons combined.</p>
+    {loading && <div className="loading">Loading playoff records...</div>}
+    {error && <div className="error"><p>{error}</p><button className="button" onClick={() => setRetry(v => v + 1)}>Retry</button></div>}
+    {!loading && data && <>
+      {!data.summary.historyComplete && <div className="error"><strong>Historical data may be incomplete</strong><ul>{data.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></div>}
+      <div style={grid}>
+        <SummaryCard label="Playoff Games" value={data.summary.totalPlayoffGames} detail="Completed games" />
+        <SummaryCard label="Playoff Points" value={fmt(data.summary.totalPlayoffPoints)} detail="Combined team scores" />
+        <SummaryCard label="Playoff Franchises" value={data.summary.uniquePlayoffFranchises} detail="Confirmed qualifiers" />
+        <SummaryCard label="First-Round Byes" value={data.summary.totalFirstRoundByes} detail="Confirmed byes" />
+      </div>
+      <h3 style={{ marginTop: 32 }}>Playoff Record Book</h3>
+      <div style={grid}>{CAREER_RECORDS.map(([key, label, format]) => {
+        const record = data.records[key];
+        return <article key={key} style={{ border: '1px solid #d4af3766', borderRadius: 12, padding: 18 }}>
+          <div className="muted small">{label}</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: '#d4af37', margin: '8px 0' }}>{record ? format === 'percent' ? percent(record.value) : format === 'points' ? fmt(record.value) : record.value : '—'}</div>
+          {record ? record.holders.map((holder, i) => <div key={i} style={{ marginTop: 8 }}>
+            <strong>{holder.season && holder.franchise ? teamLink(holder.franchise, holder.season) : holder.season && holder.winner ? teamLink(holder.winner, holder.season) : holder.name ?? 'Unknown franchise'}</strong>
+            {holder.season && <div className="muted small">{holder.season} · Week {holder.week} · {holder.round}{holder.opponent ? ` · vs ${holder.opponent.name}` : holder.loser ? ` · vs ${holder.loser.name}` : ''}</div>}
+          </div>) : <p className="muted small">No record established</p>}
+        </article>;
+      })}</div>
+      <h3 style={{ marginTop: 32 }}>All-Time Playoff Standings</h3>
+      <div className="tableScroll"><table><thead><tr>{['Franchise','APP','BYE','GP','W','L','WIN%','PF','PA','AVG','Finals','Titles','W Streak','L Streak'].map(label => <th key={label}>{label}</th>)}</tr></thead>
+        <tbody>{data.standings.map(team => <tr key={team.franchiseId}>
+          <td><strong>{team.name}</strong></td><td>{team.appearances}</td><td>{team.byes}</td><td>{team.games}</td><td>{team.wins}</td><td>{team.losses}</td><td>{percent(team.winPercentage)}</td><td>{fmt(team.pointsFor)}</td><td>{fmt(team.pointsAgainst)}</td><td>{team.averagePoints === null ? '—' : fmt(team.averagePoints)}</td><td>{team.finals}</td><td>{team.championships}</td><td>{team.longestWinningStreak}</td><td>{team.longestLosingStreak}</td>
+        </tr>)}</tbody></table></div>
+      <p className="muted small">APP = appearances · GP = games played · AVG = points per game · Streaks = career longest. Finals count completed finals only.</p>
+      <h3 style={{ marginTop: 32 }}>Historical Playoff Results</h3>
+      <div className="toolbar"><label>Season <select value={filter} onChange={event => setFilter(event.target.value)}><option value="all">All seasons</option>{data.seasonHistory.map(item => <option key={item.season} value={item.season}>{item.season}</option>)}</select></label></div>
+      {visibleGames.length === 0 ? <p className="muted">No completed playoff games available for this selection.</p> : <div className="tableScroll"><table><thead><tr><th>Season</th><th>Week</th><th>Round</th><th>Winner</th><th>Score</th><th>Loser</th><th>Margin</th></tr></thead><tbody>{visibleGames.map(game => <tr key={`${game.season}-${game.week}-${game.winner.franchiseId}-${game.loser.franchiseId}`}><td>{game.season}</td><td>{game.week}</td><td>{game.round}</td><td style={{ color: '#d4af37' }}>{teamLink(game.winner, game.season)}</td><td>{fmt(game.winnerScore)} – {fmt(game.loserScore)}</td><td>{teamLink(game.loser, game.season)}</td><td>{fmt(game.margin)}</td></tr>)}</tbody></table></div>}
+      <h3>Season Coverage</h3><div className="tableScroll"><table><thead><tr><th>Season</th><th>Status</th><th>Completed Games</th></tr></thead><tbody>{data.seasonHistory.map(item => <tr key={item.season}><td>{item.season}</td><td>{({pending:'Pending',inProgress:'In Progress',completed:'Completed',unresolved:'Requires Verification',unavailable:'Unavailable'} as Record<string, string>)[item.status] ?? item.status}</td><td>{item.completedGames}</td></tr>)}</tbody></table></div>
+      <p className="muted small">Last synchronized: {new Date(data.fetchedAt).toLocaleString('nl-BE')}</p>
+    </>}
+  </section>;
+}
+
 export default function PlayoffsPage() {
   const [season, setSeason] =
     useState(CURRENT_SEASON);
@@ -925,6 +1031,7 @@ export default function PlayoffsPage() {
         </>
       )}
       <ChampionshipHistory onSelectSeason={setSeason} refreshKey={refreshKey} />
+      <AllTimePlayoffRecords refreshKey={refreshKey} />
     </>
   );
 }
