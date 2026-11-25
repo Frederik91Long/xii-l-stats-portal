@@ -46,6 +46,29 @@ type WildCardMatchup = {
   awayTeam: PlayoffTeam | null;
 };
 
+type BracketGame = {
+  id: string;
+  week: number;
+  homeSeed: number | null;
+  awaySeed: number | null;
+  homeTeam: PlayoffTeam | null;
+  awayTeam: PlayoffTeam | null;
+  homeScore: number | null;
+  awayScore: number | null;
+  status: string;
+  winner: PlayoffTeam | null;
+  loser: PlayoffTeam | null;
+};
+
+type PlayoffBracket = {
+  wildCard: BracketGame[];
+  semiFinals: BracketGame[];
+  championship: BracketGame;
+  champion: PlayoffTeam | null;
+  runnerUp: PlayoffTeam | null;
+  warnings: string[];
+};
+
 type PlayoffData = {
   season: string;
   seasonName: string;
@@ -67,6 +90,7 @@ type PlayoffData = {
   };
   standings: PlayoffTeam[];
   projectedWildCardMatchups: WildCardMatchup[];
+  bracket?: PlayoffBracket;
   fetchedAt: string;
 };
 
@@ -209,6 +233,91 @@ function SummaryCard({
         {detail}
       </div>
     </div>
+  );
+}
+
+const GAME_STATUS: Record<string, string> = {
+  projected: 'Projected', pending: 'Awaiting results',
+  scheduled: 'Scheduled', inProgress: 'In Progress',
+  completed: 'Final', unresolved: 'Result requires verification',
+  missingMatchup: 'Matchup not available'
+};
+
+function BracketCard({ game, season, label }: {
+  game: BracketGame; season: string; label: string;
+}) {
+  const entries = [
+    { team: game.homeTeam, seed: game.homeSeed, score: game.homeScore },
+    { team: game.awayTeam, seed: game.awaySeed, score: game.awayScore }
+  ];
+  return (
+    <article style={{ border: '1px solid rgba(128,128,128,0.3)', borderRadius: 12, padding: 16 }}>
+      <div className="muted small">{label} · Week {game.week}</div>
+      {entries.map((entry, index) => {
+        const won = game.status === 'completed' && entry.team != null &&
+          game.winner?.rosterId === entry.team.rosterId;
+        return (
+          <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 10,
+            padding: '14px 0', borderBottom: '1px solid rgba(128,128,128,0.2)',
+            color: won ? '#d4af37' : undefined }}>
+            <span className="muted small">{entry.seed == null ? '—' : `#${entry.seed}`}</span>
+            <div style={{ flex: 1, fontWeight: won ? 800 : 600 }}>
+              {entry.team ? <Link href={`/franchises/${entry.team.rosterId}?season=${season}`}>
+                {entry.team.name}</Link> : 'TBD'}
+              {won && <div className="small" style={{ color: '#d4af37' }}>Winner</div>}
+            </div>
+            <strong>{entry.score == null ? '—' : fmt(entry.score)}</strong>
+          </div>
+        );
+      })}
+      <p className="small" style={{ marginBottom: 0,
+        color: game.status === 'inProgress' ? '#22c55e' : undefined }}>
+        {GAME_STATUS[game.status] ?? 'Status unavailable'}
+      </p>
+    </article>
+  );
+}
+
+function RoadToTheCrown({ data }: { data: PlayoffData }) {
+  const bracket = data.bracket;
+  const roundGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 };
+  return (
+    <section style={{ marginTop: 36 }}>
+      <div style={{ color: '#d4af37', fontWeight: 700, letterSpacing: 2, fontSize: 12 }}>XII-L CHAMPIONSHIP</div>
+      <h2>Road to the Crown</h2>
+      <p className="muted small">{data.seedingFinal ? 'Final regular-season seeds' : 'Projected bracket — if the season ended today'}</p>
+      {!bracket ? <p className="muted">Playoff bracket data is unavailable.</p> : <>
+        <h3>Wild Card Round · Week {data.config.wildCardWeek}</h3>
+        <div style={roundGrid}>
+          {bracket.wildCard.map((game, index) => <BracketCard key={game.id} game={game} season={data.season} label={`Wild Card ${index + 1}`} />)}
+        </div>
+        <div style={{ textAlign: 'center', padding: 20, color: '#d4af37' }}>
+          <strong>↓ Automatic Reseeding ↓</strong>
+          <p className="muted small">Seed 1 faces the lowest remaining seed. Seed 2 faces the other Wild Card winner.</p>
+        </div>
+        <h3>Semi-finals · Week {data.config.semiFinalWeek}</h3>
+        <div style={roundGrid}>
+          {bracket.semiFinals.map((game, index) => <BracketCard key={game.id} game={game} season={data.season} label={`Semi-final ${index + 1}`} />)}
+        </div>
+        <div style={{ textAlign: 'center', padding: 16, color: '#d4af37' }}>↓</div>
+        <h3>XII-L Championship · Week {data.config.championshipWeek}</h3>
+        <div style={{ maxWidth: 560, margin: '0 auto' }}>
+          <BracketCard game={bracket.championship} season={data.season} label="Championship" />
+        </div>
+        <div style={{ marginTop: 24, padding: 28, textAlign: 'center', border: '1px solid #d4af3766', borderRadius: 12 }}>
+          <div style={{ fontSize: 36 }}>🏆</div>
+          <h2 style={{ color: '#d4af37' }}>{data.season} XII-L Champion</h2>
+          {bracket.champion ? <>
+            <h3><Link href={`/franchises/${bracket.champion.rosterId}?season=${data.season}`}>{bracket.champion.name}</Link></h3>
+            {bracket.runnerUp && <p className="muted">Runner-up: {bracket.runnerUp.name}</p>}
+          </> : <p className="muted">The Crown awaits.</p>}
+        </div>
+        {bracket.warnings?.length > 0 && <div className="error" style={{ marginTop: 16 }}>
+          <strong>Bracket verification required</strong>
+          <ul>{bracket.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+        </div>}
+      </>}
+    </section>
   );
 }
 
@@ -621,59 +730,7 @@ export default function PlayoffsPage() {
               ))
           }
 
-          <section style={{ marginTop: 36 }}>
-            <h2>
-              {data.seedingFinal
-                ? 'Wild Card Matchups'
-                : 'Projected Wild Card Matchups'}
-            </h2>
-
-            <p className="muted small">
-              Week {data.config.wildCardWeek}
-              {' · '}
-              {data.seedingFinal
-                ? 'Based on final regular-season seeds'
-                : 'If the season ended today'}
-            </p>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns:
-                'repeat(auto-fit, minmax(240px, 1fr))',
-              gap: 16
-            }}>
-              {data.projectedWildCardMatchups.map(
-                (game, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      border:
-                        '1px solid rgba(128,128,128,0.25)',
-                      borderRadius: 12,
-                      padding: 22,
-                      textAlign: 'center'
-                    }}
-                  >
-                    <div className="muted small">
-                      WILD CARD GAME {index + 1}
-                    </div>
-
-                    <h3>
-                      #{game.homeSeed}{' '}
-                      {game.homeTeam?.name ?? 'TBD'}
-                    </h3>
-
-                    <div className="muted">VS</div>
-
-                    <h3>
-                      #{game.awaySeed}{' '}
-                      {game.awayTeam?.name ?? 'TBD'}
-                    </h3>
-                  </div>
-                )
-              )}
-            </div>
-          </section>
+          <RoadToTheCrown data={data} />
 
           <section style={{ marginTop: 30 }}>
             <h2>First-Round Byes</h2>
