@@ -18,7 +18,8 @@ import {
 import {
   getPlayoffConfig,
   getPlayoffRound,
-  getWildCardMatchups
+  getWildCardMatchups,
+  getReseededSemiFinals
 } from '@/lib/playoffs';
 
 import {
@@ -432,6 +433,135 @@ export async function GET(
           ) ?? null
       }));
 
+    const seedingFinal =
+      regularSeasonComplete &&
+      standings.every(team => team.gamesPlayed === config.regularSeasonEnd) &&
+      unresolvedSeedTies.length === 0;
+
+    type BracketStatus = 'projected' | 'pending' | 'scheduled' |
+      'inProgress' | 'completed' | 'unresolved' | 'missingMatchup';
+
+    const playoffWeeks = [
+      config.wildCardWeek,
+      config.semiFinalWeek,
+      config.championshipWeek
+    ];
+
+    const playoffRows = new Map<number, Matchup[]>();
+    const bracketWarnings: string[] = [];
+
+    if (seedingFinal) {
+      await Promise.all(playoffWeeks
+        .filter(week => week <= currentWeek)
+        .map(async week => {
+          try {
+            const rows = await sleeper<Matchup[]>(
+              `/league/${leagueId}/matchups/${week}`
+            );
+            if (!Array.isArray(rows)) throw new Error('Invalid matchup response');
+            playoffRows.set(week, rows);
+          } catch {
+            bracketWarnings.push(`Could not import playoff week ${week}`);
+          }
+        }));
+    }
+
+    function bracketGame(
+      id: string,
+      week: number,
+      homeSeed: number | null,
+      awaySeed: number | null
+    ) {
+      const homeTeam = standings.find(team => team.seed === homeSeed) ?? null;
+      const awayTeam = standings.find(team => team.seed === awaySeed) ?? null;
+      let status: BracketStatus = 'pending';
+      let homeScore: number | null = null;
+      let awayScore: number | null = null;
+      let winner: PlayoffTeam | null = null;
+      let loser: PlayoffTeam | null = null;
+
+      if (homeTeam && awayTeam) {
+        if (!seedingFinal) {
+          status = 'projected';
+        } else if (week > currentWeek) {
+          status = 'scheduled';
+        } else {
+          const rows = playoffRows.get(week) ?? [];
+          const home = rows.find(row => row.roster_id === homeTeam.rosterId);
+          const away = rows.find(row => row.roster_id === awayTeam.rosterId);
+          const paired = home && away &&
+            home.matchup_id != null &&
+            home.matchup_id === away.matchup_id &&
+            rows.filter(row => row.matchup_id === home.matchup_id).length === 2;
+
+          if (!paired || !home || !away) {
+            status = 'missingMatchup';
+            bracketWarnings.push(`${id}: expected matchup not found in week ${week}`);
+          } else {
+            const hp = home.custom_points ?? home.points;
+            const ap = away.custom_points ?? away.points;
+            if (!Number.isFinite(hp) || !Number.isFinite(ap)) {
+              status = 'unresolved';
+              bracketWarnings.push(`${id}: invalid scores`);
+            } else {
+              homeScore = hp;
+              awayScore = ap;
+              if (isComplete || week < currentWeek) {
+                if (hp === ap) {
+                  status = 'unresolved';
+                  bracketWarnings.push(`${id}: tied playoff score; official winner required`);
+                } else {
+                  status = 'completed';
+                  winner = hp > ap ? homeTeam : awayTeam;
+                  loser = hp > ap ? awayTeam : homeTeam;
+                }
+              } else {
+                status = 'inProgress';
+              }
+            }
+          }
+        }
+      }
+
+      return { id, week, homeSeed, awaySeed, homeTeam, awayTeam,
+        homeScore, awayScore, status, winner, loser };
+    }
+
+    const wildCard = getWildCardMatchups().map((game, index) =>
+      bracketGame(`WC${index + 1}`, config.wildCardWeek,
+        game.homeSeed, game.awaySeed)
+    );
+
+    const wildCardWinners = wildCard.flatMap(game =>
+      game.winner ? [game.winner.seed] : []
+    );
+
+    const semiFinalPairs = wildCardWinners.length === 2
+      ? getReseededSemiFinals(wildCardWinners)
+      : [{ homeSeed: 1, awaySeed: null }, { homeSeed: 2, awaySeed: null }];
+
+    const semiFinals = semiFinalPairs.map((game, index) =>
+      bracketGame(`SF${index + 1}`, config.semiFinalWeek,
+        game.homeSeed, game.awaySeed)
+    );
+
+    const finalists = semiFinals.flatMap(game =>
+      game.winner ? [game.winner.seed] : []
+    ).sort((a, b) => a - b);
+
+    const championship = bracketGame('FINAL', config.championshipWeek,
+      finalists.length === 2 ? finalists[0] : null,
+      finalists.length === 2 ? finalists[1] : null);
+
+    const bracket = {
+      wildCard,
+      semiFinals,
+      championship,
+      champion: championship.winner,
+      runnerUp: championship.loser,
+      warnings: bracketWarnings.sort()
+    };
+
     return NextResponse.json(
       {
         season: season.year,
@@ -454,9 +584,7 @@ export async function GET(
 
         unresolvedSeedTies,
 
-        seedingFinal:
-          regularSeasonComplete &&
-          unresolvedSeedTies.length === 0,
+        seedingFinal,
 
         scheduleComplete:
           unavailableScheduleWeeks.length === 0,
@@ -467,6 +595,7 @@ export async function GET(
         playoffTeams,
         byeTeams,
         projectedWildCardMatchups,
+        bracket,
 
         fetchedAt: new Date().toISOString()
       },
