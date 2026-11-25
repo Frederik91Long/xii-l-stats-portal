@@ -489,6 +489,7 @@ export default function RecordsPage() {
         </>
       )}
       <AllTimeRecords />
+      <AllTimeFranchiseRecords />
     </main>
   );
 }
@@ -626,6 +627,252 @@ function AllTimeRecords() {
             {leaderboard.length === 0 && <p className="muted">No matching players.</p>}
           </section>
         </>
+      )}
+    </>
+  );
+}
+
+type FranchiseTotals = {
+  games: number;
+  wins: number;
+  losses: number;
+  ties: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  winPercentage: number;
+  averagePoints: number;
+};
+
+type FranchiseStreak = {
+  length: number;
+  startSeason: string;
+  startWeek: number;
+  endSeason: string;
+  endWeek: number;
+};
+
+type FranchiseCareerRecord = {
+  id: string;
+  name: string;
+  overall: FranchiseTotals;
+  seasons: Record<string, { rosterId: number; overall: FranchiseTotals }>;
+  longestWinningStreak: FranchiseStreak | null;
+  longestLosingStreak: FranchiseStreak | null;
+};
+
+type FranchiseGameRecord = {
+  franchiseName: string;
+  rosterId: number;
+  season: string;
+  week: number;
+  pointsFor: number;
+  margin: number;
+  opponentName: string;
+};
+
+type FranchiseSeasonRecord = FranchiseTotals & {
+  franchiseName: string;
+  rosterId: number;
+  season: string;
+};
+
+type FranchiseStanding = FranchiseTotals & {
+  rank: number;
+  id: string;
+  name: string;
+  seasonsPlayed: number;
+};
+
+type FranchisePhase = 'overall' | 'regularSeason' | 'postseason';
+
+type AllTimeFranchiseData = {
+  importedSeasons: string[];
+  completedGames: number;
+  franchises: FranchiseCareerRecord[];
+  standings: Record<FranchisePhase, FranchiseStanding[]>;
+  records: {
+    mostWins: FranchiseCareerRecord | null;
+    mostLosses: FranchiseCareerRecord | null;
+    bestWinPercentage: FranchiseCareerRecord | null;
+    mostPointsFor: FranchiseCareerRecord | null;
+    mostPointsAgainst: FranchiseCareerRecord | null;
+    highestTeamScore: FranchiseGameRecord | null;
+    lowestTeamScore: FranchiseGameRecord | null;
+    biggestVictory: FranchiseGameRecord | null;
+    longestWinningStreak: FranchiseCareerRecord | null;
+    longestLosingStreak: FranchiseCareerRecord | null;
+    bestScoringSeason: FranchiseSeasonRecord | null;
+  };
+};
+
+function AllTimeFranchiseRecords() {
+  const [data, setData] = useState<AllTimeFranchiseData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [phase, setPhase] = useState<FranchisePhase>('overall');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+
+    fetch('/api/all-time-franchises', {
+      cache: 'no-store',
+      signal: controller.signal
+    })
+      .then(async response => {
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'All-time franchise import failed');
+        }
+        if (
+          !result.records ||
+          !Array.isArray(result.franchises) ||
+          !Array.isArray(result.importedSeasons) ||
+          !Array.isArray(result.standings?.overall) ||
+          !Array.isArray(result.standings?.regularSeason) ||
+          !Array.isArray(result.standings?.postseason)
+        ) {
+          throw new Error('Invalid all-time franchise API response');
+        }
+        if (!controller.signal.aborted) setData(result);
+      })
+      .catch(error => {
+        if (!controller.signal.aborted) {
+          setError(error instanceof Error ? error.message : 'Unknown error');
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [attempt]);
+
+  const refresh = () => setAttempt(value => value + 1);
+  const formatPoints = (value?: number) =>
+    value === undefined ? '—' : value.toFixed(2);
+  const formatPercentage = (value?: number) =>
+    value === undefined ? '—' : `${(value * 100).toFixed(1)}%`;
+
+  function historicalLink(name: string, rosterId: number, season: string) {
+    return <Link href={`/franchises/${rosterId}?season=${season}`}>{name}</Link>;
+  }
+
+  function careerLink(franchise: FranchiseCareerRecord | null) {
+    if (!franchise) return '—';
+    const years = Object.keys(franchise.seasons).sort((a, b) => Number(b) - Number(a));
+    const year = years.find(year => franchise.seasons[year].overall.games > 0) ?? years[0];
+    return year
+      ? historicalLink(franchise.name, franchise.seasons[year].rosterId, year)
+      : franchise.name;
+  }
+
+  function gameLink(game: FranchiseGameRecord | null) {
+    return game ? historicalLink(game.franchiseName, game.rosterId, game.season) : '—';
+  }
+
+  function gameValue(game: FranchiseGameRecord | null, margin = false) {
+    return game
+      ? `${formatPoints(margin ? game.margin : game.pointsFor)} (W${game.week}, ${game.season} vs ${game.opponentName})`
+      : '—';
+  }
+
+  function streakValue(streak: FranchiseStreak | null | undefined) {
+    return streak
+      ? `${streak.length} (W${streak.startWeek}, ${streak.startSeason} – W${streak.endWeek}, ${streak.endSeason})`
+      : '—';
+  }
+
+  const r = data?.records;
+  const standings = data?.standings[phase] ?? [];
+  const hasGames = standings.some(team => team.games > 0);
+
+  return (
+    <>
+      <section className="panel">
+        <h2>All-Time Franchise Records</h2>
+        <State loading={loading} error={error} refresh={refresh} />
+        {data && r && (
+          <>
+            <p className="muted small">
+              Imported seasons: {data.importedSeasons.join(', ')} · {data.completedGames} completed matchups.
+              Records include regular season and postseason unless otherwise stated.
+              Streaks carry across seasons. Postseason includes consolation games.
+            </p>
+            {error && <p className="muted small">Showing previously loaded results.</p>}
+            <button className="button" disabled={loading} onClick={refresh}>
+              Refresh All-Time Franchise Records
+            </button>
+            <div className="tableScroll">
+              <table>
+                <thead><tr><th>Record</th><th>Franchise</th><th>Value</th></tr></thead>
+                <tbody>
+                  <tr><td>Most Wins</td><td>{careerLink(r.mostWins)}</td><td>{r.mostWins?.overall.wins ?? '—'}</td></tr>
+                  <tr><td>Most Losses</td><td>{careerLink(r.mostLosses)}</td><td>{r.mostLosses?.overall.losses ?? '—'}</td></tr>
+                  <tr><td>Best Win Percentage</td><td>{careerLink(r.bestWinPercentage)}</td><td>{formatPercentage(r.bestWinPercentage?.overall.winPercentage)}</td></tr>
+                  <tr><td>Most Points For</td><td>{careerLink(r.mostPointsFor)}</td><td>{formatPoints(r.mostPointsFor?.overall.pointsFor)}</td></tr>
+                  <tr><td>Most Points Against</td><td>{careerLink(r.mostPointsAgainst)}</td><td>{formatPoints(r.mostPointsAgainst?.overall.pointsAgainst)}</td></tr>
+                  <tr><td>Highest Team Score</td><td>{gameLink(r.highestTeamScore)}</td><td>{gameValue(r.highestTeamScore)}</td></tr>
+                  <tr><td>Lowest Team Score</td><td>{gameLink(r.lowestTeamScore)}</td><td>{gameValue(r.lowestTeamScore)}</td></tr>
+                  <tr><td>Biggest Victory</td><td>{gameLink(r.biggestVictory)}</td><td>{gameValue(r.biggestVictory, true)}</td></tr>
+                  <tr><td>Longest Winning Streak</td><td>{careerLink(r.longestWinningStreak)}</td><td>{streakValue(r.longestWinningStreak?.longestWinningStreak)}</td></tr>
+                  <tr><td>Longest Losing Streak</td><td>{careerLink(r.longestLosingStreak)}</td><td>{streakValue(r.longestLosingStreak?.longestLosingStreak)}</td></tr>
+                  <tr>
+                    <td>Best Scoring Season (Regular Season)</td>
+                    <td>{r.bestScoringSeason ? historicalLink(r.bestScoringSeason.franchiseName, r.bestScoringSeason.rosterId, r.bestScoringSeason.season) : '—'}</td>
+                    <td>{r.bestScoringSeason ? `${formatPoints(r.bestScoringSeason.pointsFor)} (${r.bestScoringSeason.season})` : '—'}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="muted small">Best Scoring Season includes completed games of the ongoing season. Career links open the latest season played.</p>
+          </>
+        )}
+      </section>
+
+      {data && (
+        <section className="panel">
+          <h2>All-Time Franchise Standings</h2>
+          <div className="toolbar">
+            <label htmlFor="franchise-phase">Competition </label>
+            <select id="franchise-phase" value={phase} onChange={event => setPhase(event.target.value as FranchisePhase)}>
+              <option value="overall">Overall</option>
+              <option value="regularSeason">Regular Season</option>
+              <option value="postseason">Postseason</option>
+            </select>
+          </div>
+          <p className="muted small">
+            {phase === 'overall' ? 'All completed matchups.' : phase === 'regularSeason' ? 'Regular season matchups only.' : 'Postseason matchups, including consolation games.'}
+            {' '}Ranked by win percentage, wins and points for.
+          </p>
+          {!hasGames ? (
+            <p className="muted">No completed games available for this competition.</p>
+          ) : (
+            <div className="tableScroll">
+              <table>
+                <thead><tr><th>#</th><th>Franchise</th><th>GP</th><th>W</th><th>L</th><th>T</th><th>WIN%</th><th>PF</th><th>PA</th><th>AVG PF</th></tr></thead>
+                <tbody>
+                  {standings.map(team => (
+                    <tr key={team.id}>
+                      <td>{team.games > 0 ? team.rank : '—'}</td>
+                      <td>{careerLink(data.franchises.find(franchise => franchise.id === team.id) ?? null)}</td>
+                      <td>{team.games}</td>
+                      <td>{team.wins}</td>
+                      <td>{team.losses}</td>
+                      <td>{team.ties}</td>
+                      <td>{team.games > 0 ? formatPercentage(team.winPercentage) : '—'}</td>
+                      <td>{formatPoints(team.pointsFor)}</td>
+                      <td>{formatPoints(team.pointsAgainst)}</td>
+                      <td>{team.games > 0 ? formatPoints(team.averagePoints) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
     </>
   );
