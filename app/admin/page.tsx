@@ -1,32 +1,29 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+
+import {
+  Trophy,
+  Landmark,
+  ClipboardList,
+  Settings,
+  LayoutDashboard
+} from 'lucide-react';
+
 import { getAdminAuth } from '@/lib/admin/auth';
+import { getAdminNavigation } from '@/lib/admin/navigation';
+
+import AdminShell from './AdminShell';
 import LogoutButton from './LogoutButton';
 
 export const dynamic = 'force-dynamic';
 
-const modules = [
-  {
-    title: 'Season Awards',
-    description: 'Manage official XII-L season awards.',
-    icon: '🏆'
-  },
-  {
-    title: 'Hall of Fame',
-    description: 'Manage inductees and career achievements.',
-    icon: '🏛️'
-  },
-  {
-    title: 'Audit Log',
-    description: 'Review administrative activity and changes.',
-    icon: '📋'
-  },
-  {
-    title: 'League Management',
-    description: 'Future league administration tools.',
-    icon: '⚙️'
-  }
-];
+const moduleIcons = {
+  dashboard: LayoutDashboard,
+  trophy: Trophy,
+  landmark: Landmark,
+  clipboard: ClipboardList,
+  settings: Settings
+};
 
 export default async function AdminPage() {
   const auth = await getAdminAuth();
@@ -55,7 +52,9 @@ export default async function AdminPage() {
         <LogoutButton />
 
         <div style={{ marginTop: '24px' }}>
-          <Link href="/">Return to Stats Portal</Link>
+          <Link href="/">
+            Return to Stats Portal
+          </Link>
         </div>
       </main>
     );
@@ -63,80 +62,38 @@ export default async function AdminPage() {
 
   const admin = auth.admin;
 
+  const modules = getAdminNavigation(admin.role)
+    .filter(item => item.id !== 'dashboard');
+
   return (
-    <main
-      style={{
-        maxWidth: '1200px',
-        margin: '40px auto',
-        padding: '24px'
-      }}
+    <AdminShell
+      admin={admin}
+      title="Dashboard"
+      description={`Welcome, ${admin.displayName}. Manage the official XII-L Stats Portal from your commissioner workspace.`}
     >
       <section
         style={{
-          background: '#111827',
-          color: '#ffffff',
-          border: '1px solid #374151',
-          borderRadius: '16px',
-          padding: '32px',
-          marginBottom: '28px'
+          marginBottom: '24px'
         }}
       >
-        <div
+        <h2
           style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            flexWrap: 'wrap',
-            gap: '20px'
+            fontSize: '22px',
+            margin: '0 0 8px'
           }}
         >
-          <div>
-            <div
-              style={{
-                color: '#d4af37',
-                fontSize: '13px',
-                fontWeight: 700,
-                letterSpacing: '2px'
-              }}
-            >
-              XII-L COMMISSIONER ACCESS
-            </div>
-
-            <h1 style={{ margin: '12px 0' }}>
-              Admin Center
-            </h1>
-
-            <p style={{ color: '#9ca3af' }}>
-              Welcome, {admin.displayName}.
-            </p>
-
-            <span
-              style={{
-                display: 'inline-block',
-                background: '#d4af37',
-                color: '#111827',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 700
-              }}
-            >
-              {admin.role === 'super_admin'
-                ? 'SUPER ADMIN'
-                : 'ADMIN'}
-            </span>
-          </div>
-
-          <LogoutButton />
-        </div>
+          Administration Modules
+        </h2>
 
         <p
           style={{
-            color: '#86efac',
-            marginTop: '20px'
+            color: '#9ca3af',
+            fontSize: '14px',
+            margin: 0
           }}
         >
-          Authenticated · Administrator access verified
+          Manage league awards, historical achievements
+          and administrative activity.
         </p>
       </section>
 
@@ -144,51 +101,158 @@ export default async function AdminPage() {
         style={{
           display: 'grid',
           gridTemplateColumns:
-            'repeat(auto-fit, minmax(240px, 1fr))',
+            'repeat(auto-fit, minmax(220px, 1fr))',
           gap: '20px'
         }}
       >
-        {modules.map(module => (
-          <section
-            key={module.title}
-            style={{
-              background: '#111827',
-              color: '#ffffff',
-              border: '1px solid #374151',
-              borderRadius: '12px',
-              padding: '24px'
-            }}
-          >
-            <div style={{ fontSize: '30px' }}>
-              {module.icon}
-            </div>
+        {modules.map(module => {
+          const Icon = moduleIcons[module.icon];
 
-            <h2 style={{ fontSize: '20px' }}>
-              {module.title}
-            </h2>
-
-            <p style={{ color: '#9ca3af' }}>
-              {module.description}
-            </p>
-
-            <span
+          return (
+            <section
+              key={module.id}
               style={{
-                color: '#d4af37',
-                fontSize: '12px',
-                fontWeight: 700
+                background: '#111827',
+                color: '#ffffff',
+                border: '1px solid #374151',
+                borderRadius: '14px',
+                padding: '24px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
               }}
             >
-              COMING SOON
-            </span>
-          </section>
-        ))}
+              <div
+                style={{
+                  background: 'rgba(212, 175, 55, 0.12)',
+                  color: '#d4af37',
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Icon size={24} />
+              </div>
+
+              <h2
+                style={{
+                  fontSize: '19px',
+                  margin: 0
+                }}
+              >
+                {module.label}
+              </h2>
+
+              <p
+                style={{
+                  color: '#9ca3af',
+                  fontSize: '14px',
+                  lineHeight: 1.6,
+                  margin: 0,
+                  flex: 1
+                }}
+              >
+                {module.description}
+              </p>
+
+              <div
+                style={{
+                  borderTop: '1px solid #374151',
+                  paddingTop: '14px',
+                  marginTop: '8px'
+                }}
+              >
+                {module.enabled ? (
+                  <Link
+                    href={module.href}
+                    style={{
+                      color: '#d4af37',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      textDecoration: 'none'
+                    }}
+                  >
+                    Open Module →
+                  </Link>
+                ) : (
+                  <span
+                    style={{
+                      color: '#d4af37',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      letterSpacing: '1px'
+                    }}
+                  >
+                    COMING SOON
+                  </span>
+                )}
+              </div>
+            </section>
+          );
+        })}
       </div>
 
-      <div style={{ marginTop: '32px' }}>
-        <Link href="/">
-          Return to XII-L Stats Portal
-        </Link>
-      </div>
-    </main>
+      <section
+        style={{
+          background: '#111827',
+          color: '#ffffff',
+          border: '1px solid #374151',
+          borderRadius: '14px',
+          padding: '24px',
+          marginTop: '24px'
+        }}
+      >
+        <h2
+          style={{
+            fontSize: '19px',
+            margin: '0 0 12px'
+          }}
+        >
+          Admin Center Status
+        </h2>
+
+        <p
+          style={{
+            color: '#86efac',
+            fontSize: '14px'
+          }}
+        >
+          ✓ Authentication verified
+        </p>
+
+        <p
+          style={{
+            color: '#86efac',
+            fontSize: '14px'
+          }}
+        >
+          ✓ Administrator permissions verified
+        </p>
+
+        <p
+          style={{
+            color: '#86efac',
+            fontSize: '14px'
+          }}
+        >
+          ✓ Admin navigation initialized
+        </p>
+
+        <p
+          style={{
+            color: '#9ca3af',
+            fontSize: '13px',
+            lineHeight: 1.6,
+            marginBottom: 0
+          }}
+        >
+          Additional administration modules will become
+          available as development progresses.
+        </p>
+      </section>
+    </AdminShell>
   );
 }
