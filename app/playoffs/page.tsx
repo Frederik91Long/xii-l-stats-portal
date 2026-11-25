@@ -282,7 +282,7 @@ function RoadToTheCrown({ data }: { data: PlayoffData }) {
   const bracket = data.bracket;
   const roundGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 };
   return (
-    <section style={{ marginTop: 36 }}>
+    <section id="road-to-the-crown" style={{ marginTop: 36 }}>
       <div style={{ color: '#d4af37', fontWeight: 700, letterSpacing: 2, fontSize: 12 }}>XII-L CHAMPIONSHIP</div>
       <h2>Road to the Crown</h2>
       <p className="muted small">{data.seedingFinal ? 'Final regular-season seeds' : 'Projected bracket — if the season ended today'}</p>
@@ -316,6 +316,146 @@ function RoadToTheCrown({ data }: { data: PlayoffData }) {
           <strong>Bracket verification required</strong>
           <ul>{bracket.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
         </div>}
+      </>}
+    </section>
+  );
+}
+
+type HistoryFinalist = {
+  franchiseId: string;
+  rosterId: number;
+  name: string;
+  seed: number;
+};
+
+type HistoryEntry = {
+  season: string;
+  seasonName: string;
+  week: number | null;
+  status: 'completed' | 'pending' | 'unresolved' | 'unavailable';
+  champion: HistoryFinalist | null;
+  runnerUp: HistoryFinalist | null;
+  championScore: number | null;
+  runnerUpScore: number | null;
+  margin: number | null;
+  finalists: HistoryFinalist[];
+  warnings: string[];
+};
+
+type ChampionshipHistoryData = {
+  summary: {
+    championshipsAwarded: number;
+    uniqueChampions: number;
+    finalsPlayed: number;
+    unresolvedSeasons: number;
+  };
+  latestChampion: HistoryEntry | null;
+  history: HistoryEntry[];
+  leaderboard: {
+    franchiseId: string;
+    name: string;
+    championships: number;
+    finals: number;
+    finalsLost: number;
+    championshipWinPercentage: number | null;
+    championshipSeasons: string[];
+    runnerUpSeasons: string[];
+  }[];
+};
+
+function ChampionshipHistory({ onSelectSeason, refreshKey }: {
+  onSelectSeason: (season: string) => void;
+  refreshKey: number;
+}) {
+  const [history, setHistory] = useState<ChampionshipHistoryData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    setHistory(null);
+    async function load() {
+      try {
+        const response = await fetch('/api/championships', {
+          cache: 'no-store', signal: controller.signal
+        });
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error || 'Championship import failed');
+        if (!json.summary || !Array.isArray(json.history) || !Array.isArray(json.leaderboard)) {
+          throw new Error('Invalid championship history response');
+        }
+        if (!controller.signal.aborted) setHistory(json);
+      } catch (err) {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Unknown error');
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+    load();
+    return () => controller.abort();
+  }, [refreshKey, retry]);
+
+  const latest = history?.latestChampion;
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 };
+  return (
+    <section style={{ marginTop: 48 }}>
+      <div style={{ color: '#d4af37', fontWeight: 700, letterSpacing: 2, fontSize: 12 }}>XII-L LEGACY</div>
+      <h2>Championship History</h2>
+      <p className="muted">Legends are crowned. History is written.</p>
+      {loading && <div className="loading">Loading championship history...</div>}
+      {error && <div className="error"><p>{error}</p><button className="button" onClick={() => setRetry(v => v + 1)}>Retry</button></div>}
+      {!loading && history && <>
+        {history.summary.unresolvedSeasons > 0 && <p className="error">Some historical results require verification. Totals include confirmed results only.</p>}
+        <div style={grid}>
+          <SummaryCard label="Championships" value={history.summary.championshipsAwarded} detail="Confirmed titles" />
+          <SummaryCard label="Unique Champions" value={history.summary.uniqueChampions} detail="Title-winning franchises" />
+          <SummaryCard label="Finals Played" value={history.summary.finalsPlayed} detail="Confirmed finals" />
+        </div>
+        <div style={{ margin: '24px 0', padding: 28, textAlign: 'center', border: '1px solid #d4af3766', borderRadius: 12 }}>
+          <div style={{ fontSize: 36 }}>🏆</div>
+          <h2 style={{ color: '#d4af37' }}>{latest?.champion ? 'Latest Confirmed Champion' : 'The Crown Awaits'}</h2>
+          {latest?.champion ? <>
+            <h3><Link href={`/franchises/${latest.champion.rosterId}?season=${latest.season}`}>{latest.champion.name}</Link></h3>
+            <p>{latest.season} · Seed #{latest.champion.seed}</p>
+          </> : <p className="muted">No confirmed champion in the archive yet.</p>}
+        </div>
+        <h3>Championship Finals</h3>
+        <div style={grid}>
+          {history.history.map(entry => <article key={entry.season} style={{ border: '1px solid rgba(128,128,128,0.3)', borderRadius: 12, padding: 20 }}>
+            <div className="muted small">{entry.season} · {entry.seasonName}</div>
+            <p className="muted small">{entry.week === null ? 'Week unavailable' : `Week ${entry.week}`}</p>
+            {entry.status === 'completed' && entry.champion && entry.runnerUp ? <>
+              <h3 style={{ color: '#d4af37' }}>🏆 <Link href={`/franchises/${entry.champion.rosterId}?season=${entry.season}`}>{entry.champion.name}</Link></h3>
+              <p>Seed #{entry.champion.seed} · {entry.championScore === null ? '—' : fmt(entry.championScore)}</p>
+              <strong><Link href={`/franchises/${entry.runnerUp.rosterId}?season=${entry.season}`}>{entry.runnerUp.name}</Link></strong>
+              <p>Seed #{entry.runnerUp.seed} · {entry.runnerUpScore === null ? '—' : fmt(entry.runnerUpScore)}</p>
+              <p className="muted small">Victory margin: {entry.margin === null ? '—' : fmt(entry.margin)}</p>
+            </> : <>
+              <h3>{entry.status === 'pending' ? 'Championship Pending' : 'Result Requires Verification'}</h3>
+              <p>{entry.finalists.length ? entry.finalists.map(team => team.name).join(' vs ') : 'Finalists to be determined'}</p>
+            </>}
+            {entry.warnings.length > 0 && <details><summary>Verification notes</summary><ul>{entry.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
+            <button className="button" onClick={() => {
+              onSelectSeason(entry.season);
+              document.getElementById('road-to-the-crown')?.scrollIntoView({ behavior: 'smooth' });
+            }}>View {entry.season} Bracket</button>
+          </article>)}
+        </div>
+        <h3 style={{ marginTop: 32 }}>All-Time Championship Leaderboard</h3>
+        <div className="tableScroll"><table>
+          <thead><tr><th>Franchise</th><th>Titles</th><th>Finals</th><th>Finals Lost</th><th>Win %</th><th>Championship Seasons</th><th>Runner-up Seasons</th></tr></thead>
+          <tbody>{history.leaderboard.map(team => <tr key={team.franchiseId}>
+            <td><strong>{team.name}</strong></td>
+            <td style={{ color: team.championships > 0 ? '#d4af37' : undefined }}>{team.championships}</td>
+            <td>{team.finals}</td><td>{team.finalsLost}</td>
+            <td>{team.championshipWinPercentage === null ? '—' : `${(team.championshipWinPercentage * 100).toFixed(1)}%`}</td>
+            <td>{team.championshipSeasons.join(', ') || '—'}</td>
+            <td>{team.runnerUpSeasons.join(', ') || '—'}</td>
+          </tr>)}</tbody>
+        </table></div>
       </>}
     </section>
   );
@@ -784,6 +924,7 @@ export default function PlayoffsPage() {
           </p>
         </>
       )}
+      <ChampionshipHistory onSelectSeason={setSeason} refreshKey={refreshKey} />
     </>
   );
 }
